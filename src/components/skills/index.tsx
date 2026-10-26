@@ -194,7 +194,6 @@ function SkillDetailDialog({
               id={detail.id}
               title={detail.title}
               steps={detail.steps}
-              context={`Category: ${detail.category}. ${detail.difficulty} level.`}
               numberedBadge
             />
           </section>

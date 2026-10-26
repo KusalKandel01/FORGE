@@ -43,10 +43,8 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { useToast } from "@/hooks/use-toast";
-import { ExerciseModel } from "@/components/shared/exercise-model";
-import { ExerciseStepImages } from "@/components/shared/exercise-step-figure";
+import { StepImages } from "@/components/shared/step-images";
 import { TopicMedia } from "@/components/shared/topic-media";
-import { patternForExercise } from "@/lib/exercise-pattern";
 import { newWorkout, todayKey, useFitness } from "./store";
 import {
   blockFromExercise,
@@ -596,11 +594,6 @@ function TutorPlayer({ title, blocks, onClose }: PlayerProps) {
                     {displayEx.equipment}
                   </p>
                 </div>
-                <ExerciseModel
-                  pattern={patternForExercise(displayEx.name, displayEx.category)}
-                  compact
-                  className="mt-3"
-                />
                 <ol className="nice-scrollbar mt-3 max-h-56 space-y-3 overflow-y-auto pr-1">
                   {displayEx.steps.map((s, i) => (
                     <li key={i} className="flex gap-3">
@@ -717,19 +710,14 @@ function ExerciseDetail({
         ))}
       </div>
 
-      {/* Real online media first: actual form videos and photos from the
-          web, so the movement is easy to copy. The stick figure model
-          below stays as the instant offline reference. */}
+      {/* Real online media only: actual form videos and photos from the
+          web, so the movement is easy to copy. No drawn figures. */}
       <TopicMedia query={`how to do ${exercise.name} proper form`} />
 
-      <ExerciseModel
-        pattern={patternForExercise(exercise.name, exercise.category)}
-        className="mt-1"
-      />
-
-      <ExerciseStepImages
-        exerciseName={exercise.name}
-        category={exercise.category}
+      <StepImages
+        kind="exercise"
+        id={exercise.id}
+        title={exercise.name}
         steps={exercise.steps}
       />
 

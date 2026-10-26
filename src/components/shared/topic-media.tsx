@@ -75,7 +75,7 @@ export function TopicVideo({
           `/api/media/video?q=${encodeURIComponent(query)}`,
           // The server search takes a few seconds on a cold cache; give it
           // room instead of flickering into the error state.
-          { signal: AbortSignal.timeout(45_000) }
+          { signal: AbortSignal.timeout(100_000) }
         );
         if (!res.ok) throw new Error("video lookup failed");
         const data = (await res.json()) as VideoLookup;
@@ -230,7 +230,7 @@ export function TopicImages({
       try {
         const res = await fetch(
           `/api/media/image?q=${encodeURIComponent(query)}&count=${count}`,
-          { signal: AbortSignal.timeout(45_000) }
+          { signal: AbortSignal.timeout(100_000) }
         );
         if (!res.ok) throw new Error("image lookup failed");
         const data = (await res.json()) as { images?: RealImage[] };
