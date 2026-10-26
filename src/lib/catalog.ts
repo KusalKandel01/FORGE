@@ -12,6 +12,7 @@
  */
 
 import { CATALOG_MORE } from "./catalog-more";
+import { CATALOG_EXTRA } from "./catalog-extra";
 
 export interface CatalogBook {
   /** Numeric Project Gutenberg id. */
@@ -125,9 +126,14 @@ const CATALOG_BASE: CatalogBook[] = [
 
 /**
  * The full shelf: the originals above plus the expansion packs (ancient
- * epics, study texts, memoirs, self improvement) from catalog-more.ts.
+ * epics, study texts, memoirs, self improvement, and pack 2 of live verified
+ * modern classics) from catalog-more.ts and catalog-extra.ts.
  */
-export const CATALOG: CatalogBook[] = [...CATALOG_BASE, ...CATALOG_MORE];
+export const CATALOG: CatalogBook[] = [
+  ...CATALOG_BASE,
+  ...CATALOG_MORE,
+  ...CATALOG_EXTRA,
+];
 
 /** One-line description shown when a catalog hit has no cover image. */
 export function catalogGenres(book: CatalogBook): string {

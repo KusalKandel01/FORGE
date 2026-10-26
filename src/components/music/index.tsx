@@ -12,6 +12,7 @@ import {
   SkipBack,
   SkipForward,
   Shuffle,
+  Star,
   Trash2,
   Volume2,
   WifiOff,
@@ -32,6 +33,7 @@ import {
   RADIO_MIXES,
   parseSource,
   useMusic,
+  type Favorite,
   type SourceType,
 } from "@/components/music/store";
 
@@ -154,6 +156,9 @@ export default function MusicPlayer() {
   const clearSource = useMusic((s) => s.clearSource);
   const setVolume = useMusic((s) => s.setVolume);
   const setShuffle = useMusic((s) => s.setShuffle);
+  const favorites = useMusic((s) => s.favorites);
+  const addFavorite = useMusic((s) => s.addFavorite);
+  const removeFavorite = useMusic((s) => s.removeFavorite);
 
   const [input, setInput] = useState("");
   const [playing, setPlaying] = useState(false);
@@ -304,6 +309,45 @@ export default function MusicPlayer() {
     handleMix(mix.id);
   };
 
+  // Honest label for the current source: real video title for videos, the
+  // known mix name for built-in mixes, otherwise the raw ID. Never invented.
+  let currentLabel = "";
+  if (sourceType && sourceId) {
+    if (sourceType === "video") {
+      currentLabel = trackTitle || sourceId;
+    } else {
+      const mix = RADIO_MIXES.find((m) => m.id === sourceId);
+      currentLabel = mix ? mix.label : sourceId;
+    }
+  }
+  const currentSaved = Boolean(
+    sourceType &&
+      sourceId &&
+      favorites.some((f) => f.type === sourceType && f.id === sourceId)
+  );
+
+  const toggleFavorite = () => {
+    if (!sourceType || !sourceId) return;
+    if (currentSaved) {
+      removeFavorite(sourceType, sourceId);
+      toast({ title: "Removed from favorites" });
+    } else {
+      addFavorite(sourceType, sourceId, currentLabel);
+      toast({ title: "Saved to favorites", description: currentLabel });
+    }
+  };
+
+  // Same load flow as handleMix: reuse the source state, bump the tick to
+  // force a reload when the favorite is already the active source.
+  const playFavorite = (fav: Favorite) => {
+    setError(null);
+    if (sourceType === fav.type && sourceId === fav.id) {
+      setTick((t) => t + 1);
+    } else {
+      setSource(fav.type, fav.id);
+    }
+  };
+
   const safeCall = (fn: (p: YTPlayer) => void) => {
     const p = playerRef.current;
     if (!p) return;
@@ -355,18 +399,46 @@ export default function MusicPlayer() {
               )}
             </div>
             <div className="mt-3 border border-border bg-secondary/40 p-3">
-              <p className="font-head text-[11px] font-extrabold uppercase tracking-[0.2em] text-muted-foreground">
-                Now playing
-              </p>
-              <p className="mt-1 truncate text-sm" title={trackTitle}>
-                {error
-                  ? "Player error"
-                  : playing
-                    ? trackTitle || "Loading..."
-                    : sourceType
-                      ? trackTitle || "Paused"
-                      : "Nothing loaded yet"}
-              </p>
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0 flex-1">
+                  <p className="font-head text-[11px] font-extrabold uppercase tracking-[0.2em] text-muted-foreground">
+                    Now playing
+                  </p>
+                  <p className="mt-1 truncate text-sm" title={trackTitle}>
+                    {error
+                      ? "Player error"
+                      : playing
+                        ? trackTitle || "Loading..."
+                        : sourceType
+                          ? trackTitle || "Paused"
+                          : "Nothing loaded yet"}
+                  </p>
+                </div>
+                {sourceType && sourceId && (
+                  <Button
+                    variant="outline"
+                    onClick={toggleFavorite}
+                    aria-label={
+                      currentSaved
+                        ? "Remove from favorites"
+                        : "Save to favorites"
+                    }
+                    aria-pressed={currentSaved}
+                    className={`h-11 w-11 shrink-0 ${
+                      currentSaved
+                        ? "border-volt text-volt"
+                        : "border-border text-muted-foreground"
+                    }`}
+                  >
+                    <Star
+                      className={`h-5 w-5 ${
+                        currentSaved ? "fill-volt" : ""
+                      }`}
+                      aria-hidden
+                    />
+                  </Button>
+                )}
+              </div>
             </div>
             {error && (
               <div className="mt-2 space-y-2">
@@ -516,6 +588,71 @@ export default function MusicPlayer() {
                   <Trash2 className="mr-2 h-4 w-4" aria-hidden />
                   Clear player
                 </Button>
+              )}
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2 font-head text-xs font-extrabold uppercase tracking-[0.2em]">
+                <Star className="h-4 w-4 text-volt" aria-hidden /> Favorites
+              </CardTitle>
+              <CardDescription>
+                Saved mixes, playlists and videos. Stored on this device.
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              {favorites.length === 0 ? (
+                <p className="text-sm text-muted-foreground">
+                  No favorites yet. Save a mix or playlist while it plays.
+                </p>
+              ) : (
+                <ul className="nice-scrollbar max-h-96 space-y-2 overflow-y-auto pr-1">
+                  {favorites.map((fav) => {
+                    const active =
+                      fav.type === sourceType && fav.id === sourceId;
+                    return (
+                      <li
+                        key={`${fav.type}:${fav.id}`}
+                        className={`flex items-center gap-2 border bg-secondary/40 p-2 ${
+                          active ? "border-volt" : "border-border"
+                        }`}
+                      >
+                        <div className="min-w-0 flex-1">
+                          <p className="truncate text-sm" title={fav.label}>
+                            {fav.label}
+                          </p>
+                          <p className="mt-0.5 font-head text-[10px] font-extrabold uppercase tracking-[0.2em] text-muted-foreground">
+                            {fav.type === "video" ? "Video" : "Playlist"}
+                          </p>
+                        </div>
+                        <Button
+                          variant="outline"
+                          onClick={() => playFavorite(fav)}
+                          aria-label={`Play ${fav.label}`}
+                          className={`h-11 w-11 shrink-0 ${
+                            active
+                              ? "border-volt text-volt"
+                              : "border-border"
+                          }`}
+                        >
+                          <Play className="h-4 w-4" aria-hidden />
+                        </Button>
+                        <Button
+                          variant="outline"
+                          onClick={() => {
+                            removeFavorite(fav.type, fav.id);
+                            toast({ title: "Removed from favorites" });
+                          }}
+                          aria-label={`Remove ${fav.label} from favorites`}
+                          className="h-11 w-11 shrink-0 border-border text-muted-foreground hover:text-ember"
+                        >
+                          <Trash2 className="h-4 w-4" aria-hidden />
+                        </Button>
+                      </li>
+                    );
+                  })}
+                </ul>
               )}
             </CardContent>
           </Card>

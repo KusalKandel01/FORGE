@@ -10,16 +10,29 @@ import {
 import {
   AlertTriangle,
   ArrowLeft,
+  Bookmark,
   ChevronLeft,
   ChevronRight,
-  Loader2,
+  Highlighter,
   Minus,
+  NotebookPen,
   Plus,
   RefreshCcw,
+  Trash2,
   WifiOff,
 } from "lucide-react";
+import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Separator } from "@/components/ui/separator";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Toaster } from "@/components/ui/sonner";
 import {
   getChapter,
   getMisc,
@@ -29,10 +42,21 @@ import {
   putText,
   type StoredOutline,
 } from "@/lib/book-cache";
-import { useLibrary, type ShelfMeta } from "@/components/library/store";
+import {
+  useLibrary,
+  type Bookmark as BookmarkEntry,
+  type Highlight,
+  type ShelfMeta,
+} from "@/components/library/store";
 
 const WORDS_PER_PAGE = 1600;
 const MIN_CHAPTERS = 1;
+/** A selection must be at least this many chars before it can be highlighted. */
+const MIN_HIGHLIGHT_CHARS = 3;
+
+/** Stable empty array: selectors must never return a fresh reference or
+ *  useSyncExternalStore throws an infinite loop error. */
+const EMPTY_MARKS: BookmarkEntry[] = [];
 
 function subscribeOnline(onChange: () => void) {
   window.addEventListener("online", onChange);
@@ -93,14 +117,20 @@ function ReaderTopBar({
   subtitle,
   indicator,
   onClose,
+  bookmarked = false,
+  onToggleBookmark,
+  onOpenNotes,
 }: {
   title: string;
   subtitle: string;
   indicator: string;
   onClose: () => void;
+  bookmarked?: boolean;
+  onToggleBookmark?: () => void;
+  onOpenNotes?: () => void;
 }) {
   return (
-    <div className="flex items-center gap-3 border-b border-border bg-card px-3 py-2">
+    <div className="flex items-center gap-2 border-b border-border bg-card px-3 py-2">
       <Button
         variant="outline"
         onClick={onClose}
@@ -115,11 +145,316 @@ function ReaderTopBar({
           {subtitle}
         </p>
       </div>
+      {onToggleBookmark ? (
+        <Button
+          variant="outline"
+          onClick={onToggleBookmark}
+          aria-label={
+            bookmarked ? "Remove bookmark from this page" : "Bookmark this page"
+          }
+          aria-pressed={bookmarked}
+          className="h-11 w-11 shrink-0 border-border p-0"
+        >
+          <Bookmark
+            className={`h-5 w-5 ${bookmarked ? "fill-volt text-volt" : ""}`}
+            aria-hidden
+          />
+        </Button>
+      ) : null}
+      {onOpenNotes ? (
+        <Button
+          variant="outline"
+          onClick={onOpenNotes}
+          aria-label="Open bookmarks and highlights"
+          className="h-11 w-11 shrink-0 border-border"
+        >
+          <NotebookPen className="h-5 w-5" aria-hidden />
+        </Button>
+      ) : null}
       <span className="shrink-0 font-head text-xs font-extrabold uppercase tracking-[0.2em] text-volt">
         {indicator}
       </span>
     </div>
   );
+}
+
+/** Compact honest date for the notes list. Never invents a date. */
+function formatSavedDate(iso: string): string {
+  try {
+    const d = new Date(iso);
+    if (Number.isNaN(d.getTime())) return "";
+    const sameYear = d.getFullYear() === new Date().getFullYear();
+    return d.toLocaleDateString(
+      undefined,
+      sameYear
+        ? { month: "short", day: "numeric" }
+        : { month: "short", day: "numeric", year: "numeric" }
+    );
+  } catch {
+    return "";
+  }
+}
+
+function NotesDialog({
+  open,
+  onOpenChange,
+  unit,
+  bookmarks,
+  highlights,
+  onJump,
+  onDeleteBookmark,
+  onDeleteHighlight,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  /** Row unit for page numbers: "Page", "Ch." or "Part". */
+  unit: string;
+  bookmarks: BookmarkEntry[];
+  highlights: Highlight[];
+  onJump: (page: number) => void;
+  onDeleteBookmark: (id: string) => void;
+  onDeleteHighlight: (id: string) => void;
+}) {
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="border-border bg-card sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle className="font-display text-2xl uppercase tracking-wide">
+            Notes
+          </DialogTitle>
+          <DialogDescription>
+            Bookmarks and highlights for this book, saved on this device only.
+          </DialogDescription>
+        </DialogHeader>
+
+        <p className="font-head text-xs font-extrabold uppercase tracking-[0.2em] text-volt">
+          Bookmarks
+        </p>
+        {bookmarks.length === 0 ? (
+          <p className="border border-dashed border-border p-4 text-center text-sm leading-relaxed text-muted-foreground">
+            No bookmarks yet. Tap the bookmark icon in the top bar to save the
+            page you are on.
+          </p>
+        ) : (
+          <div className="nice-scrollbar max-h-56 space-y-2 overflow-y-auto pr-1">
+            {bookmarks.map((bm) => (
+              <div key={bm.id} className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    onOpenChange(false);
+                    onJump(bm.page);
+                  }}
+                  className="min-h-11 flex-1 border border-transparent p-2 text-left transition-colors hover:border-volt/60 hover:bg-secondary/40"
+                >
+                  <span className="flex items-center gap-2 font-head text-xs font-extrabold uppercase tracking-widest text-volt">
+                    <Bookmark className="h-3.5 w-3.5 shrink-0" aria-hidden />
+                    {bm.label ?? `${unit} ${bm.page}`}
+                  </span>
+                  <span className="mt-0.5 block text-xs text-muted-foreground">
+                    {formatSavedDate(bm.at)}
+                  </span>
+                </button>
+                <Button
+                  variant="outline"
+                  onClick={() => onDeleteBookmark(bm.id)}
+                  aria-label="Delete bookmark"
+                  className="h-11 w-11 shrink-0 border-border"
+                >
+                  <Trash2 className="h-4 w-4" aria-hidden />
+                </Button>
+              </div>
+            ))}
+          </div>
+        )}
+
+        <Separator />
+
+        <p className="font-head text-xs font-extrabold uppercase tracking-[0.2em] text-volt">
+          Highlights
+        </p>
+        {highlights.length === 0 ? (
+          <p className="border border-dashed border-border p-4 text-center text-sm leading-relaxed text-muted-foreground">
+            No highlights yet. Select any text while reading, then tap
+            HIGHLIGHT.
+          </p>
+        ) : (
+          <div className="nice-scrollbar max-h-64 space-y-2 overflow-y-auto pr-1">
+            {highlights.map((h) => (
+              <div key={h.id} className="flex items-start gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    onOpenChange(false);
+                    onJump(h.page);
+                  }}
+                  className="min-h-11 flex-1 border border-transparent p-2 text-left transition-colors hover:border-volt/60 hover:bg-secondary/40"
+                >
+                  <span className="line-clamp-2 text-sm leading-relaxed">
+                    &ldquo;{h.text}&rdquo;
+                  </span>
+                  <span className="mt-1 flex items-center gap-1.5 font-head text-[10px] font-extrabold uppercase tracking-widest text-muted-foreground">
+                    <Highlighter className="h-3 w-3 shrink-0" aria-hidden />
+                    {unit} {h.page} · {formatSavedDate(h.at)}
+                  </span>
+                </button>
+                <Button
+                  variant="outline"
+                  onClick={() => onDeleteHighlight(h.id)}
+                  aria-label="Delete highlight"
+                  className="h-11 w-11 shrink-0 border-border"
+                >
+                  <Trash2 className="h-4 w-4" aria-hidden />
+                </Button>
+              </div>
+            ))}
+          </div>
+        )}
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+interface HighlightPopup {
+  text: string;
+  top: number;
+  left: number;
+}
+
+/**
+ * Read text selections inside the reading pane and expose a small
+ * "HIGHLIGHT" popup near the selection. Works with mouse (mouseup) and
+ * touch (touchend + delay). Everything is defensive: a selection API
+ * failure must never break reading or page turning.
+ */
+function useSelectionHighlight({
+  wrapperRef,
+  paneRef,
+  enabled,
+  onSave,
+}: {
+  wrapperRef: React.RefObject<HTMLDivElement | null>;
+  paneRef: React.RefObject<HTMLDivElement | null>;
+  enabled: boolean;
+  onSave: (text: string) => void;
+}) {
+  const [popup, setPopup] = useState<HighlightPopup | null>(null);
+  const pendingRef = useRef("");
+  const timerRef = useRef<number | null>(null);
+  const onSaveRef = useRef(onSave);
+
+  useEffect(() => {
+    onSaveRef.current = onSave;
+  }, [onSave]);
+
+  const clearPopup = useCallback(() => {
+    setPopup(null);
+    pendingRef.current = "";
+  }, []);
+
+  const capture = useCallback(() => {
+    if (!enabled) return;
+    try {
+      const pane = paneRef.current;
+      const wrapper = wrapperRef.current;
+      if (!pane || !wrapper) return;
+      const sel = window.getSelection();
+      if (!sel || sel.isCollapsed || sel.rangeCount === 0) {
+        setPopup(null);
+        return;
+      }
+      const text = sel.toString().replace(/\s+/g, " ").trim();
+      if (text.length < MIN_HIGHLIGHT_CHARS || text.length > 300) {
+        setPopup(null);
+        return;
+      }
+      const range = sel.getRangeAt(0);
+      if (!pane.contains(range.commonAncestorContainer)) {
+        setPopup(null);
+        return;
+      }
+      const rect = range.getBoundingClientRect();
+      if (!rect || (rect.width === 0 && rect.height === 0)) {
+        setPopup(null);
+        return;
+      }
+      // Position the popup above the selection, clamped inside the pane.
+      const wrapRect = wrapper.getBoundingClientRect();
+      const POPUP_W = 124;
+      const POPUP_H = 44;
+      const GAP = 8;
+      const left = Math.min(
+        Math.max(
+          rect.left - wrapRect.left + rect.width / 2 - POPUP_W / 2,
+          GAP
+        ),
+        Math.max(GAP, wrapRect.width - POPUP_W - GAP)
+      );
+      let top = rect.top - wrapRect.top - POPUP_H - GAP;
+      if (top < GAP) top = rect.bottom - wrapRect.top + GAP;
+      top = Math.max(
+        GAP,
+        Math.min(top, Math.max(GAP, wrapRect.height - POPUP_H - GAP))
+      );
+      pendingRef.current = text;
+      setPopup({ text, top, left });
+    } catch {
+      setPopup(null);
+    }
+  }, [enabled, paneRef, wrapperRef]);
+
+  const scheduleCapture = useCallback(
+    (delay: number) => {
+      if (timerRef.current !== null) window.clearTimeout(timerRef.current);
+      timerRef.current = window.setTimeout(() => {
+        timerRef.current = null;
+        capture();
+      }, delay);
+    },
+    [capture]
+  );
+
+  /* Hide the popup as soon as the selection collapses (tap elsewhere). */
+  useEffect(() => {
+    if (!enabled) return;
+    const onSelectionChange = () => {
+      try {
+        const sel = window.getSelection();
+        if (!sel || sel.isCollapsed) setPopup(null);
+      } catch {
+        setPopup(null);
+      }
+    };
+    document.addEventListener("selectionchange", onSelectionChange);
+    return () =>
+      document.removeEventListener("selectionchange", onSelectionChange);
+  }, [enabled, clearPopup]);
+
+  useEffect(() => {
+    return () => {
+      if (timerRef.current !== null) window.clearTimeout(timerRef.current);
+    };
+  }, []);
+
+  const saveFromPopup = useCallback(() => {
+    const text = pendingRef.current;
+    clearPopup();
+    try {
+      window.getSelection()?.removeAllRanges();
+    } catch {
+      // Selection clearing is cosmetic; saving must not depend on it.
+    }
+    if (text) onSaveRef.current(text);
+  }, [clearPopup]);
+
+  /* Popup is only meaningful while the reading pane is live; readers render
+     it inside their "ready" branch, so stale entries never show. */
+  return {
+    popup: enabled ? popup : null,
+    scheduleCapture,
+    clearPopup,
+    saveFromPopup,
+  };
 }
 
 function FontControls({
@@ -212,13 +547,21 @@ function GutenbergReader({
   const setFontSize = useLibrary((s) => s.setFontSize);
   const updateProgress = useLibrary((s) => s.updateProgress);
   const markOfflineReady = useLibrary((s) => s.markOfflineReady);
+  const addBookmark = useLibrary((s) => s.addBookmark);
+  const removeBookmark = useLibrary((s) => s.removeBookmark);
+  const addHighlight = useLibrary((s) => s.addHighlight);
+  const removeHighlight = useLibrary((s) => s.removeHighlight);
+  const bookmarks = useLibrary((s) => s.bookmarks[book.id] ?? EMPTY_MARKS);
+  const highlights = useLibrary((s) => s.highlights[book.id] ?? EMPTY_MARKS);
   const online = useOnline();
 
   const [status, setStatus] = useState<GutenbergStatus>("loading");
   const [pages, setPages] = useState<string[]>([]);
   const [pageIndex, setPageIndex] = useState(0);
   const [reloadKey, setReloadKey] = useState(0);
+  const [notesOpen, setNotesOpen] = useState(false);
   const scrollRef = useRef<HTMLDivElement | null>(null);
+  const paneWrapperRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -292,9 +635,53 @@ function GutenbergReader({
     [pages.length, pageIndex, book.id, updateProgress]
   );
 
+  const displayPage = pageIndex + 1;
+  const currentBookmark = bookmarks.find((b) => b.page === displayPage);
+
+  const toggleBookmark = useCallback(() => {
+    const existing = bookmarks.find((b) => b.page === displayPage);
+    if (existing) {
+      removeBookmark(book.id, existing.id);
+      return;
+    }
+    addBookmark(book.id, displayPage, `Page ${displayPage}`);
+    toast.success(`Page ${displayPage} bookmarked`);
+  }, [
+    bookmarks,
+    displayPage,
+    removeBookmark,
+    addBookmark,
+    book.id,
+  ]);
+
+  const handleSaveHighlight = useCallback(
+    (text: string) => {
+      addHighlight(book.id, displayPage, text);
+      toast.success("Highlight saved", {
+        description: `Page ${displayPage}`,
+      });
+    },
+    [addHighlight, book.id, displayPage]
+  );
+
+  const { popup, scheduleCapture, clearPopup, saveFromPopup } =
+    useSelectionHighlight({
+      wrapperRef: paneWrapperRef,
+      paneRef: scrollRef,
+      enabled: status === "ready",
+      onSave: handleSaveHighlight,
+    });
+
+  /* A stale popup after a page turn would sit in the wrong spot. */
+  useEffect(() => {
+    clearPopup();
+  }, [pageIndex, clearPopup]);
+
   useEffect(() => {
     if (status !== "ready") return;
     const onKey = (e: KeyboardEvent) => {
+      // An open shadcn dialog owns the keyboard; do not turn pages behind it.
+      if (document.querySelector('[data-state="open"][role="dialog"]')) return;
       if (e.key === "ArrowLeft") goToPage(pageIndex - 1);
       if (e.key === "ArrowRight") goToPage(pageIndex + 1);
     };
@@ -314,6 +701,9 @@ function GutenbergReader({
         subtitle={book.author}
         indicator={pages.length > 0 ? `PAGE ${pageIndex + 1} / ${pages.length}` : ""}
         onClose={onClose}
+        bookmarked={status === "ready" && currentBookmark !== undefined}
+        onToggleBookmark={status === "ready" ? toggleBookmark : undefined}
+        onOpenNotes={status === "ready" ? () => setNotesOpen(true) : undefined}
       />
 
       {status === "loading" && (
@@ -323,13 +713,35 @@ function GutenbergReader({
       )}
 
       {status === "ready" && (
-        <div ref={scrollRef} className="nice-scrollbar flex-1 overflow-y-auto">
+        <div ref={paneWrapperRef} className="relative min-h-0 flex-1">
           <div
-            className="mx-auto max-w-2xl px-4 py-6"
-            style={{ fontSize: `${fontSize}px`, lineHeight: 1.7 }}
+            ref={scrollRef}
+            className="nice-scrollbar h-full overflow-y-auto"
+            onMouseUp={() => scheduleCapture(0)}
+            onTouchEnd={() => scheduleCapture(300)}
+            onScroll={clearPopup}
           >
-            <p className="whitespace-pre-wrap">{pages[pageIndex]}</p>
+            <div
+              className="mx-auto max-w-2xl px-4 py-6"
+              style={{ fontSize: `${fontSize}px`, lineHeight: 1.7 }}
+            >
+              <p className="whitespace-pre-wrap">{pages[pageIndex]}</p>
+            </div>
           </div>
+          {popup ? (
+            <button
+              type="button"
+              onPointerDown={(e) => {
+                e.preventDefault();
+                saveFromPopup();
+              }}
+              style={{ top: popup.top, left: popup.left }}
+              className="absolute z-10 h-11 w-[124px] border border-volt bg-background font-head text-[10px] font-extrabold uppercase tracking-[0.2em] text-volt hard-shadow-sm-volt"
+              aria-label="Save highlight"
+            >
+              HIGHLIGHT
+            </button>
+          ) : null}
         </div>
       )}
 
@@ -415,6 +827,17 @@ function GutenbergReader({
           onLarger={() => setFontSize(fontSize + 1)}
         />
       </div>
+
+      <NotesDialog
+        open={notesOpen}
+        onOpenChange={setNotesOpen}
+        unit="Page"
+        bookmarks={bookmarks}
+        highlights={highlights}
+        onJump={(page) => goToPage(page - 1)}
+        onDeleteBookmark={(id) => removeBookmark(book.id, id)}
+        onDeleteHighlight={(id) => removeHighlight(book.id, id)}
+      />
     </>
   );
 }
@@ -437,6 +860,12 @@ function GeneratedReader({
   const setFontSize = useLibrary((s) => s.setFontSize);
   const updateProgress = useLibrary((s) => s.updateProgress);
   const markOfflineReady = useLibrary((s) => s.markOfflineReady);
+  const addBookmark = useLibrary((s) => s.addBookmark);
+  const removeBookmark = useLibrary((s) => s.removeBookmark);
+  const addHighlight = useLibrary((s) => s.addHighlight);
+  const removeHighlight = useLibrary((s) => s.removeHighlight);
+  const bookmarks = useLibrary((s) => s.bookmarks[book.id] ?? EMPTY_MARKS);
+  const highlights = useLibrary((s) => s.highlights[book.id] ?? EMPTY_MARKS);
   const online = useOnline();
 
   const [phase, setPhase] = useState<OutlinePhase>("loading");
@@ -446,7 +875,9 @@ function GeneratedReader({
   const [chapterText, setChapterText] = useState<string | null>(null);
   const [chapterReloadKey, setChapterReloadKey] = useState(0);
   const [outlineReloadKey, setOutlineReloadKey] = useState(0);
+  const [notesOpen, setNotesOpen] = useState(false);
   const scrollRef = useRef<HTMLDivElement | null>(null);
+  const paneWrapperRef = useRef<HTMLDivElement | null>(null);
 
   /* Load the outline on open. If it went missing (wiped IndexedDB) rebuild
      it once while online, then persist it under the same book id. */
@@ -593,6 +1024,43 @@ function GeneratedReader({
     [outline, chapterIndex, book.id, updateProgress]
   );
 
+  const displayPage = chapterIndex + 1;
+  const unit = book.companion ? "Part" : "Ch.";
+  const currentBookmark = bookmarks.find((b) => b.page === displayPage);
+
+  const toggleBookmark = useCallback(() => {
+    const existing = bookmarks.find((b) => b.page === displayPage);
+    if (existing) {
+      removeBookmark(book.id, existing.id);
+      return;
+    }
+    addBookmark(book.id, displayPage, `${unit} ${displayPage}`);
+    toast.success(`${unit} ${displayPage} bookmarked`);
+  }, [bookmarks, displayPage, unit, removeBookmark, addBookmark, book.id]);
+
+  const handleSaveHighlight = useCallback(
+    (text: string) => {
+      addHighlight(book.id, displayPage, text);
+      toast.success("Highlight saved", {
+        description: `${unit} ${displayPage}`,
+      });
+    },
+    [addHighlight, book.id, displayPage, unit]
+  );
+
+  const { popup, scheduleCapture, clearPopup, saveFromPopup } =
+    useSelectionHighlight({
+      wrapperRef: paneWrapperRef,
+      paneRef: scrollRef,
+      enabled: chapterState === "ready",
+      onSave: handleSaveHighlight,
+    });
+
+  /* A stale popup after a chapter switch would sit in the wrong spot. */
+  useEffect(() => {
+    clearPopup();
+  }, [chapterIndex, clearPopup]);
+
   if (phase === "loading") {
     return (
       <>
@@ -658,8 +1126,12 @@ function GeneratedReader({
     );
   }
 
+  const totalForPercent =
+    outline?.chapterTitles.length ?? 0;
   const percent =
-    total > 0 ? Math.round(((chapterIndex + 1) / total) * 100) : 0;
+    totalForPercent > 0
+      ? Math.round(((chapterIndex + 1) / totalForPercent) * 100)
+      : 0;
 
   return (
     <>
@@ -670,31 +1142,68 @@ function GeneratedReader({
             ? `AI COMPANION - ${book.author}`
             : (outline?.chapterTitles[chapterIndex] ?? "")
         }
-        indicator={total > 0 ? `${book.companion ? "PART " : "CH. "}${chapterIndex + 1} / ${total}` : ""}
-        onClose={() => {}}
+        indicator={
+          totalForPercent > 0
+            ? `${book.companion ? "PART " : "CH. "}${chapterIndex + 1} / ${totalForPercent}`
+            : ""
+        }
+        onClose={onClose}
+        bookmarked={
+          chapterState === "ready" && phase === "ready" && currentBookmark !== undefined
+        }
+        onToggleBookmark={
+          chapterState === "ready" && phase === "ready" ? toggleBookmark : undefined
+        }
+        onOpenNotes={
+          chapterState === "ready" && phase === "ready"
+            ? () => setNotesOpen(true)
+            : undefined
+        }
       />
 
       {chapterState === "ready" && chapterText && (
-        <div ref={scrollRef} className="nice-scrollbar flex-1 overflow-y-auto">
+        <div ref={paneWrapperRef} className="relative min-h-0 flex-1">
           <div
-            className="mx-auto max-w-2xl px-4 py-6"
-            style={{ fontSize: `${fontSize}px`, lineHeight: 1.7 }}
+            ref={scrollRef}
+            className="nice-scrollbar h-full overflow-y-auto"
+            onMouseUp={() => scheduleCapture(0)}
+            onTouchEnd={() => scheduleCapture(300)}
+            onScroll={clearPopup}
           >
-            {book.companion ? (
-              <p className="mb-4 font-head text-[10px] font-extrabold uppercase tracking-[0.2em] text-volt">
-                {outline?.chapterTitles[chapterIndex]}
-              </p>
-            ) : null}
-            <p className="whitespace-pre-wrap">{chapterText}</p>
-            {book.companion && total > 0 ? (
-              <p className="mt-8 border-t border-border pt-4 text-xs leading-relaxed text-muted-foreground">
-                AI reading companion: a walkthrough of the real book in fresh
-                words, not the publisher&apos;s text. The next part covers:
-                {" "}
-                {outline?.chapterTitles[chapterIndex + 1] ?? "the final wrap-up"}.
-              </p>
-            ) : null}
+            <div
+              className="mx-auto max-w-2xl px-4 py-6"
+              style={{ fontSize: `${fontSize}px`, lineHeight: 1.7 }}
+            >
+              {book.companion ? (
+                <p className="mb-4 font-head text-[10px] font-extrabold uppercase tracking-[0.2em] text-volt">
+                  {outline?.chapterTitles[chapterIndex]}
+                </p>
+              ) : null}
+              <p className="whitespace-pre-wrap">{chapterText}</p>
+              {book.companion && totalForPercent > 0 ? (
+                <p className="mt-8 border-t border-border pt-4 text-xs leading-relaxed text-muted-foreground">
+                  AI reading companion: a walkthrough of the real book in fresh
+                  words, not the publisher&apos;s text. The next part covers:
+                  {" "}
+                  {outline?.chapterTitles[chapterIndex + 1] ?? "the final wrap-up"}.
+                </p>
+              ) : null}
+            </div>
           </div>
+          {popup ? (
+            <button
+              type="button"
+              onPointerDown={(e) => {
+                e.preventDefault();
+                saveFromPopup();
+              }}
+              style={{ top: popup.top, left: popup.left }}
+              className="absolute z-10 h-11 w-[124px] border border-volt bg-background font-head text-[10px] font-extrabold uppercase tracking-[0.2em] text-volt hard-shadow-sm-volt"
+              aria-label="Save highlight"
+            >
+              HIGHLIGHT
+            </button>
+          ) : null}
         </div>
       )}
 
@@ -767,6 +1276,17 @@ function GeneratedReader({
           onLarger={() => setFontSize(fontSize + 1)}
         />
       </div>
+
+      <NotesDialog
+        open={notesOpen}
+        onOpenChange={setNotesOpen}
+        unit={unit}
+        bookmarks={bookmarks}
+        highlights={highlights}
+        onJump={(page) => goToChapter(page - 1)}
+        onDeleteBookmark={(id) => removeBookmark(book.id, id)}
+        onDeleteHighlight={(id) => removeHighlight(book.id, id)}
+      />
     </>
   );
 }
@@ -786,6 +1306,12 @@ export function LibraryReader({
     const previous = document.body.style.overflow;
     document.body.style.overflow = "hidden";
     const onKey = (e: KeyboardEvent) => {
+      // Escape inside an open shadcn dialog (notes) closes that dialog only.
+      if (
+        e.key === "Escape" &&
+        document.querySelector('[data-state="open"][role="dialog"]')
+      )
+        return;
       if (e.key === "Escape") onClose();
     };
     window.addEventListener("keydown", onKey);
@@ -809,6 +1335,8 @@ export function LibraryReader({
       ) : (
         <GutenbergReader book={book} onClose={close} />
       )}
+      {/* Sonner toasts for bookmark/highlight confirmations while reading. */}
+      <Toaster position="bottom-center" />
     </div>
   );
 }

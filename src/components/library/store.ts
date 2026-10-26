@@ -46,6 +46,25 @@ export const XP_PER_FINISHED_BOOK = 30;
 const DEFAULT_FONT_SIZE = 17;
 const MIN_FONT_SIZE = 13;
 const MAX_FONT_SIZE = 28;
+const MAX_HIGHLIGHT_CHARS = 300;
+
+/** A saved page in a book. Device-local, never synced. */
+export interface Bookmark {
+  id: string;
+  /** Human page number shown to the reader (1-based). */
+  page: number;
+  label?: string;
+  at: string;
+}
+
+/** A saved text excerpt. Device-local, never synced. */
+export interface Highlight {
+  id: string;
+  /** Human page number shown to the reader (1-based). */
+  page: number;
+  text: string;
+  at: string;
+}
 
 interface LibraryState {
   shelf: ShelfMeta[];
@@ -56,12 +75,21 @@ interface LibraryState {
   removedBookIds: string[];
   /** When each removed book was deleted (ISO by id). */
   removedBookAt: Record<string, string>;
+  /** Bookmarks keyed by book id. Device-local by design, not synced. */
+  bookmarks: Record<string, Bookmark[]>;
+  /** Text highlights keyed by book id. Device-local by design, not synced. */
+  highlights: Record<string, Highlight[]>;
   addBook: (meta: ShelfMeta) => void;
   updateProgress: (id: string, progress: number) => void;
   markOfflineReady: (id: string) => void;
   setFontSize: (size: number) => void;
   removeBook: (id: string) => void;
   resetLibrary: () => void;
+  addBookmark: (bookId: string, page: number, label?: string) => void;
+  removeBookmark: (bookId: string, id: string) => void;
+  addHighlight: (bookId: string, page: number, text: string) => void;
+  removeHighlight: (bookId: string, id: string) => void;
+  clearBookData: (bookId: string) => void;
 }
 
 export const useLibrary = create<LibraryState>()(
@@ -72,6 +100,8 @@ export const useLibrary = create<LibraryState>()(
       booksXpAwarded: [],
       removedBookIds: [],
       removedBookAt: {},
+      bookmarks: {},
+      highlights: {},
 
       addBook: (meta) => {
         set((s) => {
@@ -165,6 +195,70 @@ export const useLibrary = create<LibraryState>()(
             ),
           },
         })),
+
+      addBookmark: (bookId, page, label) => {
+        // One bookmark per page: a second save on the same page is a no-op.
+        if ((get().bookmarks[bookId] ?? []).some((b) => b.page === page)) return;
+        const entry: Bookmark = {
+          id: `bm-${Date.now().toString(36)}`,
+          page,
+          label: label?.trim() || `Page ${page}`,
+          at: new Date().toISOString(),
+        };
+        set((s) => ({
+          bookmarks: {
+            ...s.bookmarks,
+            [bookId]: [...(s.bookmarks[bookId] ?? []), entry].sort(
+              (a, b) => a.page - b.page
+            ),
+          },
+        }));
+      },
+
+      removeBookmark: (bookId, id) =>
+        set((s) => ({
+          bookmarks: {
+            ...s.bookmarks,
+            [bookId]: (s.bookmarks[bookId] ?? []).filter((b) => b.id !== id),
+          },
+        })),
+
+      addHighlight: (bookId, page, text) => {
+        const clean = text
+          .replace(/\s+/g, " ")
+          .trim()
+          .slice(0, MAX_HIGHLIGHT_CHARS);
+        if (!clean) return;
+        const entry: Highlight = {
+          id: `hl-${Date.now().toString(36)}`,
+          page,
+          text: clean,
+          at: new Date().toISOString(),
+        };
+        set((s) => ({
+          highlights: {
+            ...s.highlights,
+            [bookId]: [entry, ...(s.highlights[bookId] ?? [])],
+          },
+        }));
+      },
+
+      removeHighlight: (bookId, id) =>
+        set((s) => ({
+          highlights: {
+            ...s.highlights,
+            [bookId]: (s.highlights[bookId] ?? []).filter((h) => h.id !== id),
+          },
+        })),
+
+      clearBookData: (bookId) =>
+        set((s) => {
+          const bookmarks = { ...s.bookmarks };
+          const highlights = { ...s.highlights };
+          delete bookmarks[bookId];
+          delete highlights[bookId];
+          return { bookmarks, highlights };
+        }),
     }),
     { name: "forge-library" }
   )

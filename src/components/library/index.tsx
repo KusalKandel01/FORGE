@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { formatDistanceToNow } from "date-fns";
 import {
   BookOpen,
@@ -62,6 +62,7 @@ import {
 } from "@/lib/book-cache";
 import { extractPdfText } from "@/lib/pdf-text";
 import LibraryReader from "@/components/library/reader";
+import BestsellersShelf from "@/components/library/bestsellers";
 import {
   useLibrary,
   type SearchResult,
@@ -442,6 +443,10 @@ export default function LibraryHub() {
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
 
+  const [shelfFilter, setShelfFilter] = useState<
+    "all" | "reading" | "finished"
+  >("all");
+
   /** Bring the user's own study book onto the shelf, fully on device. */
   const runUpload = async (file: File) => {
     setUploadError(null);
@@ -669,6 +674,16 @@ export default function LibraryHub() {
 
   const resetLibrary = useLibrary((s) => s.resetLibrary);
 
+  const filteredShelf = useMemo(() => {
+    if (shelfFilter === "reading") {
+      return shelf.filter((b) => b.progress > 0 && b.progress < 0.999);
+    }
+    if (shelfFilter === "finished") {
+      return shelf.filter((b) => b.progress >= 0.999);
+    }
+    return shelf;
+  }, [shelf, shelfFilter]);
+
   const handleReset = async () => {
     try {
       await clearAll();
@@ -691,7 +706,9 @@ export default function LibraryHub() {
           Type the name of any book: thousand year old epics, century old
           classics, study texts or whatever Gutenberg published today. If a
           free copy exists you can read it here. If it does not, FORGE writes
-          an original one for you.
+          an original one for you. Below the search you will also find the
+          famous bestsellers shelf with Deep Dive guides and legal borrow
+          links.
         </p>
       </header>
 
@@ -877,6 +894,14 @@ export default function LibraryHub() {
         )}
       </section>
 
+      {/* Bestsellers */}
+      <BestsellersShelf
+        generating={generating}
+        onDeepDive={(b) =>
+          void runGenerate(b.title, { mode: "companion", author: b.author })
+        }
+      />
+
       {/* Your own study books */}
       <section aria-label="Upload your own book">
         <Card className="border-border bg-card">
@@ -1022,24 +1047,79 @@ export default function LibraryHub() {
 
       {/* Shelf */}
       <section aria-label="Your shelf" className="space-y-4">
-        <h2 className="font-display text-3xl uppercase tracking-wide">
-          Your shelf
-        </h2>
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <h2 className="font-display text-3xl uppercase tracking-wide">
+            Your shelf
+          </h2>
+          {shelf.length > 0 ? (
+            <div
+              className="flex flex-wrap items-center gap-2"
+              role="group"
+              aria-label="Filter your shelf"
+            >
+              {(
+                [
+                  {
+                    id: "all" as const,
+                    label: "All",
+                    count: shelf.length,
+                  },
+                  {
+                    id: "reading" as const,
+                    label: "Reading",
+                    count: shelf.filter(
+                      (b) => b.progress > 0 && b.progress < 0.999
+                    ).length,
+                  },
+                  {
+                    id: "finished" as const,
+                    label: "Finished",
+                    count: shelf.filter((b) => b.progress >= 0.999).length,
+                  },
+                ]
+              ).map((f) => (
+                <button
+                  key={f.id}
+                  type="button"
+                  onClick={() => setShelfFilter(f.id)}
+                  aria-pressed={shelfFilter === f.id}
+                  className={`h-10 border px-3 font-head text-[10px] font-extrabold uppercase tracking-widest transition-colors ${
+                    shelfFilter === f.id
+                      ? "border-volt bg-volt text-black"
+                      : "border-border bg-background text-muted-foreground hover:border-volt hover:text-volt"
+                  }`}
+                >
+                  {f.label} ({f.count})
+                </button>
+              ))}
+            </div>
+          ) : null}
+        </div>
 
         {shelf.length === 0 ? (
           <Card className="border-dashed border-border bg-card">
             <CardContent className="flex flex-col items-center gap-2 p-8 text-center">
               <BookOpen className="h-6 w-6 text-volt" aria-hidden />
               <p className="text-sm text-muted-foreground">
-                Your shelf is empty. Search a title above or generate an
-                original book.
+                Your shelf is empty. Search a title above, browse the
+                bestsellers or generate an original book.
+              </p>
+            </CardContent>
+          </Card>
+        ) : filteredShelf.length === 0 ? (
+          <Card className="border-dashed border-border bg-card">
+            <CardContent className="flex flex-col items-center gap-2 p-8 text-center">
+              <BookOpen className="h-6 w-6 text-volt" aria-hidden />
+              <p className="text-sm text-muted-foreground">
+                Nothing in &quot;{shelfFilter}&quot; yet. Keep reading and it
+                will fill up on its own.
               </p>
             </CardContent>
           </Card>
         ) : (
           <div className="nice-scrollbar max-h-96 overflow-y-auto pr-1">
             <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-              {shelf.map((b) => (
+              {filteredShelf.map((b) => (
                 <ShelfCard key={b.id} book={b} onContinue={setReading} />
               ))}
             </div>

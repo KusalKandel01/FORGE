@@ -25,6 +25,8 @@ import MusicPlayer from "@/components/music";
 import LibraryHub from "@/components/library";
 import LearnHub from "@/components/learn";
 import SkillsHub from "@/components/skills";
+import ProfileView from "@/components/profile/profile-view";
+import HabitCard from "@/components/habits/habit-card";
 import { TermsPage, PrivacyPage } from "@/components/legal/legal-pages";
 import { SettingsPage } from "@/components/settings";
 import { SwRegister } from "@/components/sw-register";
@@ -64,7 +66,7 @@ const MODULES = [
     id: "library",
     icon: BookOpen,
     name: "LIBRARY",
-    desc: "Search thousands of free public domain books and read them in a clean reader. Title missing? Generate the book and read it here.",
+    desc: "Free public domain classics, a bestsellers shelf with Deep Dive guides and borrow links, bookmarks, highlights and a clean offline reader.",
     cta: "Open the library",
   },
   {
@@ -280,6 +282,15 @@ function HomeView({ navigate }: { navigate: NavigateFn }) {
       </section>
 
       <section
+        aria-label="Your profile"
+        className="border-y border-border py-10"
+      >
+        <ClientOnly>
+          <ProfileView />
+        </ClientOnly>
+      </section>
+
+      <section
         aria-label="Modules"
         className="grid gap-4 py-10 md:grid-cols-3"
       >
@@ -312,6 +323,12 @@ function HomeView({ navigate }: { navigate: NavigateFn }) {
             </CardContent>
           </Card>
         ))}
+      </section>
+
+      <section aria-label="Daily habits" className="pb-10">
+        <ClientOnly>
+          <HabitCard />
+        </ClientOnly>
       </section>
 
       <section

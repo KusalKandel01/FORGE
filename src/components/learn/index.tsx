@@ -36,6 +36,7 @@ import {
   type Lesson,
   type LessonLevel,
 } from "@/lib/learn-cache";
+import FlashcardsSection from "./flashcards";
 import LessonView from "./lesson-view";
 import { useLearnStore } from "./store";
 
@@ -480,6 +481,9 @@ export default function LearnHub() {
           </div>
         )}
       </section>
+
+      {/* Flashcards: spaced repetition decks built from lessons or by hand */}
+      <FlashcardsSection />
 
       {/* Danger zone */}
       <Card className="border-destructive/40 bg-card">

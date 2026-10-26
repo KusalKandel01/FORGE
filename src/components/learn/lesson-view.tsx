@@ -6,8 +6,10 @@ import {
   BookMarked,
   Check,
   FlaskConical,
+  Layers,
   ListChecks,
   ListTree,
+  Loader2,
   NotebookPen,
   RotateCcw,
   X,
@@ -19,6 +21,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
 import { TopicMedia } from "@/components/shared/topic-media";
 import { cn } from "@/lib/utils";
+import { useFlashcards } from "@/lib/flashcards-store";
 import type { Lesson } from "@/lib/learn-cache";
 import { useLearnStore, type LessonMeta } from "./store";
 
@@ -58,6 +61,7 @@ export default function LessonView({ lesson, meta, onRequestTopic }: LessonViewP
   const [finished, setFinished] = useState(false);
 
   const [notes, setLocalNotes] = useState(meta?.notes ?? "");
+  const [makingCards, setMakingCards] = useState(false);
   const notesRef = useRef(meta?.notes ?? "");
   const notesTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -127,6 +131,44 @@ export default function LessonView({ lesson, meta, onRequestTopic }: LessonViewP
       title: "Lesson complete",
       description: "Marked as done. +30 XP added to your profile.",
     });
+  };
+
+  const handleMakeFlashcards = async () => {
+    if (makingCards) return;
+    setMakingCards(true);
+    try {
+      const res = await fetch("/api/learn/flashcards", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ topic: lesson.topic, level: lesson.level }),
+        // Hard cap so a hung request cannot spin the button forever.
+        signal: AbortSignal.timeout(100_000),
+      });
+      const data = (await res.json().catch(() => null)) as
+        | { cards?: { front: string; back: string }[]; error?: string }
+        | null;
+      if (!res.ok || !data?.cards || data.cards.length === 0) {
+        throw new Error(
+          data?.error ??
+            "The flashcard writer is unavailable right now. Try again in a moment."
+        );
+      }
+      useFlashcards
+        .getState()
+        .createDeck(`Lesson: ${lesson.topic}`, lesson.topic, data.cards);
+      toast({
+        title: "Flashcards ready",
+        description: `${data.cards.length} cards added to the Flashcards section below.`,
+      });
+    } catch {
+      toast({
+        title: "Could not write flashcards",
+        description:
+          "The flashcard writer needs internet. Your lesson still works offline.",
+      });
+    } finally {
+      setMakingCards(false);
+    }
   };
 
   return (
@@ -365,6 +407,30 @@ export default function LessonView({ lesson, meta, onRequestTopic }: LessonViewP
             )}
           </section>
         )}
+
+        {/* Make flashcards: turns this lesson into a spaced repetition deck */}
+        <div className="flex flex-col gap-3 border border-border bg-secondary/30 p-4 sm:flex-row sm:items-center sm:justify-between sm:p-6">
+          <div>
+            <h3 className={LABEL}>Make flashcards</h3>
+            <p className="mt-1 max-w-md text-sm leading-relaxed text-muted-foreground">
+              Turn this lesson into a 10 card deck and review it with spaced
+              repetition in the Flashcards section.
+            </p>
+          </div>
+          <Button
+            variant="outline"
+            onClick={() => void handleMakeFlashcards()}
+            disabled={makingCards}
+            className="h-11 shrink-0 border-border bg-background px-6 font-head text-xs font-extrabold uppercase tracking-[0.2em] hover:bg-secondary"
+          >
+            {makingCards ? (
+              <Loader2 className="mr-2 h-4 w-4 animate-spin" aria-hidden />
+            ) : (
+              <Layers className="mr-2 h-4 w-4" aria-hidden />
+            )}
+            {makingCards ? "Writing your cards..." : "Make flashcards"}
+          </Button>
+        </div>
 
         {/* Next steps */}
         {lesson.nextTopics.length > 0 && (
