@@ -34,6 +34,8 @@ export interface Deck {
   name: string;
   topic: string;
   createdAt: string;
+  /** Client clock of the last change. Used by cloud sync (newest wins). */
+  updatedAt?: string;
   cards: FcCard[];
 }
 
@@ -137,6 +139,7 @@ export const useFlashcards = create<FlashcardsState>()(
           name: name.trim() || "Untitled deck",
           topic: topic.trim(),
           createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
           cards: clean,
         };
         set((s) => ({ decks: [deck, ...s.decks] }));
@@ -147,7 +150,11 @@ export const useFlashcards = create<FlashcardsState>()(
         set((s) => ({
           decks: s.decks.map((deck) =>
             deck.id === deckId
-              ? { ...deck, cards: [...deck.cards, newCard(front, back)] }
+              ? {
+                  ...deck,
+                  updatedAt: new Date().toISOString(),
+                  cards: [...deck.cards, newCard(front, back)],
+                }
               : deck
           ),
         })),
@@ -158,6 +165,7 @@ export const useFlashcards = create<FlashcardsState>()(
             if (deck.id !== deckId) return deck;
             return {
               ...deck,
+              updatedAt: new Date().toISOString(),
               cards: deck.cards.map((card) => {
                 if (card.id !== cardId) return card;
 

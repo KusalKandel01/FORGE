@@ -48,7 +48,7 @@ const MIN_FONT_SIZE = 13;
 const MAX_FONT_SIZE = 28;
 const MAX_HIGHLIGHT_CHARS = 300;
 
-/** A saved page in a book. Device-local, never synced. */
+/** A saved page in a book. Synced with the cloud (see library-marks). */
 export interface Bookmark {
   id: string;
   /** Human page number shown to the reader (1-based). */
@@ -57,7 +57,7 @@ export interface Bookmark {
   at: string;
 }
 
-/** A saved text excerpt. Device-local, never synced. */
+/** A saved text excerpt. Synced with the cloud (see library-marks). */
 export interface Highlight {
   id: string;
   /** Human page number shown to the reader (1-based). */
@@ -75,10 +75,16 @@ interface LibraryState {
   removedBookIds: string[];
   /** When each removed book was deleted (ISO by id). */
   removedBookAt: Record<string, string>;
-  /** Bookmarks keyed by book id. Device-local by design, not synced. */
+  /** Bookmarks keyed by book id. Synced via the "library-marks" record. */
   bookmarks: Record<string, Bookmark[]>;
-  /** Text highlights keyed by book id. Device-local by design, not synced. */
+  /** Text highlights keyed by book id. Synced via the "library-marks" record. */
   highlights: Record<string, Highlight[]>;
+  /** Mark ids deleted here, kept so cloud sync can drop them everywhere. */
+  removedMarkIds: string[];
+  /** Books whose marks were fully cleared, so other devices drop them too. */
+  clearedBookIds: string[];
+  /** When each book's marks were cleared (ISO by id). */
+  clearedBookAt: Record<string, string>;
   addBook: (meta: ShelfMeta) => void;
   updateProgress: (id: string, progress: number) => void;
   markOfflineReady: (id: string) => void;
@@ -102,6 +108,9 @@ export const useLibrary = create<LibraryState>()(
       removedBookAt: {},
       bookmarks: {},
       highlights: {},
+      removedMarkIds: [],
+      clearedBookIds: [],
+      clearedBookAt: {},
 
       addBook: (meta) => {
         set((s) => {
@@ -174,27 +183,56 @@ export const useLibrary = create<LibraryState>()(
         }),
 
       removeBook: (id) =>
-        set((s) => ({
-          shelf: s.shelf.filter((b) => b.id !== id),
-          removedBookIds: [...new Set([...s.removedBookIds, id])].slice(-200),
-          removedBookAt: { ...s.removedBookAt, [id]: new Date().toISOString() },
-        })),
+        set((s) => {
+          const now = new Date().toISOString();
+          const bookmarks = { ...s.bookmarks };
+          const highlights = { ...s.highlights };
+          delete bookmarks[id];
+          delete highlights[id];
+          return {
+            shelf: s.shelf.filter((b) => b.id !== id),
+            removedBookIds: [...new Set([...s.removedBookIds, id])].slice(-200),
+            removedBookAt: { ...s.removedBookAt, [id]: now },
+            bookmarks,
+            highlights,
+            clearedBookIds: [...new Set([...s.clearedBookIds, id])].slice(-200),
+            clearedBookAt: { ...s.clearedBookAt, [id]: now },
+          };
+        }),
 
       resetLibrary: () =>
-        set((s) => ({
-          shelf: [],
-          fontSize: DEFAULT_FONT_SIZE,
-          booksXpAwarded: [],
-          removedBookIds: [
-            ...new Set([...s.removedBookIds, ...s.shelf.map((b) => b.id)]),
-          ].slice(-200),
-          removedBookAt: {
-            ...s.removedBookAt,
-            ...Object.fromEntries(
-              s.shelf.map((b) => [b.id, new Date().toISOString()])
-            ),
-          },
-        })),
+        set((s) => {
+          const now = new Date().toISOString();
+          return {
+            shelf: [],
+            fontSize: DEFAULT_FONT_SIZE,
+            booksXpAwarded: [],
+            removedBookIds: [
+              ...new Set([...s.removedBookIds, ...s.shelf.map((b) => b.id)]),
+            ].slice(-200),
+            removedBookAt: {
+              ...s.removedBookAt,
+              ...Object.fromEntries(s.shelf.map((b) => [b.id, now])),
+            },
+            bookmarks: {},
+            highlights: {},
+            clearedBookIds: [
+              ...new Set([
+                ...s.clearedBookIds,
+                ...Object.keys(s.bookmarks),
+                ...Object.keys(s.highlights),
+              ]),
+            ].slice(-200),
+            clearedBookAt: {
+              ...s.clearedBookAt,
+              ...Object.fromEntries(
+                [...Object.keys(s.bookmarks), ...Object.keys(s.highlights)].map(
+                  (id) => [id, now]
+                )
+              ),
+            },
+          };
+        }),
 
       addBookmark: (bookId, page, label) => {
         // One bookmark per page: a second save on the same page is a no-op.
@@ -221,6 +259,7 @@ export const useLibrary = create<LibraryState>()(
             ...s.bookmarks,
             [bookId]: (s.bookmarks[bookId] ?? []).filter((b) => b.id !== id),
           },
+          removedMarkIds: [...new Set([...s.removedMarkIds, id])].slice(-400),
         })),
 
       addHighlight: (bookId, page, text) => {
@@ -249,6 +288,7 @@ export const useLibrary = create<LibraryState>()(
             ...s.highlights,
             [bookId]: (s.highlights[bookId] ?? []).filter((h) => h.id !== id),
           },
+          removedMarkIds: [...new Set([...s.removedMarkIds, id])].slice(-400),
         })),
 
       clearBookData: (bookId) =>
@@ -257,7 +297,17 @@ export const useLibrary = create<LibraryState>()(
           const highlights = { ...s.highlights };
           delete bookmarks[bookId];
           delete highlights[bookId];
-          return { bookmarks, highlights };
+          return {
+            bookmarks,
+            highlights,
+            clearedBookIds: [...new Set([...s.clearedBookIds, bookId])].slice(
+              -200
+            ),
+            clearedBookAt: {
+              ...s.clearedBookAt,
+              [bookId]: new Date().toISOString(),
+            },
+          };
         }),
     }),
     { name: "forge-library" }

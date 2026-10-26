@@ -74,17 +74,27 @@ model Device {
  * entity    - what kind of data it is ("profile", "fitness-day", "lesson", ...)
  * recordId  - key inside that entity ("state", "2025-01-31", lesson id, ...)
  * payload   - the data itself, JSON encoded
- * updatedAt - client clock of the last change (last-write-wins)
+ * updatedAt - server receive time (pull cursor), clientUpdatedAt - client
+ *             clock of the change (last-write-wins)
  * deleted   - tombstone for records removed on some device
  */
 model SyncRecord {
-  id        String   @id @default(cuid())
-  userId    String
-  entity    String
-  recordId  String
-  payload   String
-  updatedAt DateTime
-  deleted   Boolean  @default(false)
+  id       String  @id @default(cuid())
+  userId   String
+  entity   String
+  recordId String
+  payload  String
+  /**
+   * Server receive time. Pull cursors compare against this, so clock skew
+   * between devices can never hide a record from another device.
+   */
+  updatedAt DateTime @default(now())
+  /**
+   * Client clock of the change. Last-write-wins conflict resolution
+   * compares this between concurrent writes from different devices.
+   */
+  clientUpdatedAt DateTime @default(now())
+  deleted Boolean @default(false)
 
   user SyncUser @relation(fields: [userId], references: [id], onDelete: Cascade)
 

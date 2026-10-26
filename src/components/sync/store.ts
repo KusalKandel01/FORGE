@@ -22,11 +22,18 @@ export interface SyncState {
   syncing: boolean;
   /** Whole-entity change stamps (entity:state -> ISO of last local change). */
   entityStamps: Record<string, string>;
+  /**
+   * Whole entities with local changes that have not been confirmed uploaded
+   * yet. Persisted, and independent of clock comparisons, so a device with
+   * a skewed clock can never silently skip uploading its own changes.
+   */
+  pendingWhole: string[];
   /** One-way markers: this tombstone / immutable record was uploaded. */
   sentKeys: Record<string, true>;
 
   ensureDeviceId: () => string;
   markWholeChange: (entity: string) => void;
+  markWholePushed: (entities: string[]) => void;
   setSyncing: (v: boolean) => void;
   setError: (message: string | null) => void;
   setCursor: (iso: string | null) => void;
@@ -53,6 +60,7 @@ export const useSyncStore = create<SyncState>()(
       lastError: null,
       syncing: false,
       entityStamps: {},
+      pendingWhole: [],
       sentKeys: {},
 
       ensureDeviceId: () => {
@@ -66,6 +74,14 @@ export const useSyncStore = create<SyncState>()(
       markWholeChange: (entity) =>
         set((s) => ({
           entityStamps: { ...s.entityStamps, [`${entity}:state`]: new Date().toISOString() },
+          pendingWhole: s.pendingWhole.includes(entity)
+            ? s.pendingWhole
+            : [...s.pendingWhole, entity],
+        })),
+
+      markWholePushed: (entities) =>
+        set((s) => ({
+          pendingWhole: s.pendingWhole.filter((e) => !entities.includes(e)),
         })),
 
       setSyncing: (v) => set({ syncing: v }),
@@ -106,6 +122,7 @@ export const useSyncStore = create<SyncState>()(
           lastSyncAt: null,
           lastError: null,
           entityStamps: {},
+          pendingWhole: [],
           sentKeys: {},
         }),
     }),

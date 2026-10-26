@@ -2,9 +2,19 @@
 
 import { useProfile } from "@/lib/profile-store";
 import { useFitness, type DayLog, type Plan } from "@/components/fitness/store";
-import { useLibrary, type ShelfMeta } from "@/components/library/store";
+import {
+  useLibrary,
+  type ShelfMeta,
+  type Bookmark,
+  type Highlight,
+} from "@/components/library/store";
 import { useLearnStore, type LessonMeta } from "@/components/learn/store";
-import { useMusic } from "@/components/music/store";
+import { useMusic, type Favorite } from "@/components/music/store";
+import {
+  useFlashcards,
+  type Deck,
+} from "@/lib/flashcards-store";
+import { useHabits, type Habit } from "@/lib/habits-store";
 import {
   getChapter,
   getMisc,
@@ -31,17 +41,21 @@ import { useSyncStore } from "@/components/sync/store";
  *    short debounce after any local change.
  *
  * Synced entities:
- *  profile        whole XP value            (merged with max, XP never shrinks)
- *  fitness-meta   goals, badges, plan       (whole record, newest wins)
- *  fitness-day    one record per day        (newest wins per day)
- *  library-meta   font size + tombstones    (union merge)
- *  library-book   one record per shelf book (newest wins per book)
- *  book-outline   generated book outline    (immutable once written)
- *  book-chapter   generated chapter text    (immutable once written)
- *  learn-meta     XP guards + tombstones    (union merge)
- *  lesson-meta    one record per lesson     (newest wins per lesson)
- *  lesson-body    full lesson content       (immutable once written)
- *  music          last source + volume      (whole record, newest wins)
+ *  profile          whole XP value            (merged with max, XP never shrinks)
+ *  fitness-meta     goals, badges, plan       (whole record, newest wins)
+ *  fitness-day      one record per day        (newest wins per day)
+ *  library-meta     font size + tombstones    (union merge)
+ *  library-book     one record per shelf book (newest wins per book)
+ *  library-marks    bookmarks + highlights    (union merge, minus removed ids)
+ *  book-outline     generated book outline    (immutable once written)
+ *  book-chapter     generated chapter text    (immutable once written)
+ *  learn-meta       XP guards + tombstones    (union merge)
+ *  lesson-meta      one record per lesson     (newest wins per lesson)
+ *  lesson-body      full lesson content       (immutable once written)
+ *  music            last source, volume, favorites (newest wins + union favorites)
+ *  habits           habit list, checks, XP guards (union merge, checks only grow)
+ *  flashcards-meta  XP guards + deck tombstones (union merge)
+ *  flashcards-deck  one record per deck       (newest wins per deck)
  *
  * Deliberately NOT synced: full Gutenberg book texts (free to re-download),
  * and IndexedDB-only caches that rebuild themselves.
@@ -51,8 +65,11 @@ const WHOLE_ENTITIES = [
   "profile",
   "fitness-meta",
   "library-meta",
+  "library-marks",
   "learn-meta",
   "music",
+  "habits",
+  "flashcards-meta",
 ] as const;
 
 const MAX_CHANGES_PER_SYNC = 400;
@@ -95,6 +112,7 @@ async function collectChanges(): Promise<{
   changes: OutgoingChange[];
   sentKeys: string[];
   stamps: Array<[string, string]>;
+  pushedWhole: string[];
 }> {
   const sync = useSyncStore.getState();
   const cursor = sync.lastSyncAt ?? "";
@@ -102,6 +120,7 @@ async function collectChanges(): Promise<{
   const changes: OutgoingChange[] = [];
   const sentKeys: string[] = [];
   const stamps: Array<[string, string]> = [];
+  const pushedWhole: string[] = [];
 
   const push = (change: OutgoingChange) => {
     if (changes.length < MAX_CHANGES_PER_SYNC) changes.push(change);
@@ -112,6 +131,8 @@ async function collectChanges(): Promise<{
   const library = useLibrary.getState();
   const learn = useLearnStore.getState();
   const music = useMusic.getState();
+  const habits = useHabits.getState();
+  const flash = useFlashcards.getState();
   const profiles: Record<string, () => unknown> = {
     profile: () => ({ xp: useProfile.getState().xp }),
     "fitness-meta": () => ({
@@ -134,17 +155,56 @@ async function collectChanges(): Promise<{
       removedLessonIds: learn.removedLessonIds,
       removedLessonAt: learn.removedLessonAt,
     }),
+    "library-marks": () => {
+      const cleared = new Set(library.clearedBookIds);
+      const marks: Record<
+        string,
+        { bookmarks: Bookmark[]; highlights: Highlight[] }
+      > = {};
+      const bookIds = new Set([
+        ...Object.keys(library.bookmarks),
+        ...Object.keys(library.highlights),
+      ]);
+      for (const bookId of bookIds) {
+        if (cleared.has(bookId)) continue;
+        const bookmarks = library.bookmarks[bookId] ?? [];
+        const highlights = library.highlights[bookId] ?? [];
+        if (bookmarks.length === 0 && highlights.length === 0) continue;
+        marks[bookId] = { bookmarks, highlights };
+      }
+      return {
+        marks,
+        removedMarkIds: library.removedMarkIds,
+        clearedBookIds: library.clearedBookIds,
+        clearedBookAt: library.clearedBookAt,
+      };
+    },
     music: () => ({
       type: music.type,
       id: music.id,
       volume: music.volume,
       shuffle: music.shuffle,
+      favorites: music.favorites,
+      removedFavoriteKeys: music.removedFavoriteKeys ?? [],
+    }),
+    habits: () => ({
+      habits: habits.habits,
+      checks: habits.checks,
+      xpAwarded: habits.xpAwarded,
+    }),
+    "flashcards-meta": () => ({
+      xpAwarded: flash.xpAwarded,
+      tombstones: flash.tombstones,
     }),
   };
 
   for (const entity of WHOLE_ENTITIES) {
     const stamp = sync.entityStamps[`${entity}:state`];
-    if (!stamp || !(stamp > cursor)) continue;
+    if (!stamp) continue;
+    // Push when the entity is locally dirty (reliable regardless of clock
+    // skew) or its stamp is newer than the cursor.
+    const isPending = sync.pendingWhole.includes(entity);
+    if (!isPending && !(stamp > cursor)) continue;
     push({
       entity,
       recordId: "state",
@@ -152,6 +212,7 @@ async function collectChanges(): Promise<{
       updatedAt: stamp,
     });
     stamps.push([`${entity}:state`, stamp]);
+    pushedWhole.push(entity);
   }
 
   // Fitness days: one record per day, stamp lives in the day itself.
@@ -201,6 +262,32 @@ async function collectChanges(): Promise<{
       recordId: meta.id,
       payload: JSON.stringify(body),
       updatedAt: meta.savedAt,
+    });
+    sentKeys.push(key);
+  }
+
+  // Flashcard decks: one record per deck, the deck carries its own stamp.
+  for (const deck of flash.decks) {
+    const stamp = deck.updatedAt ?? deck.createdAt;
+    if (!(stamp > cursor)) continue;
+    push({
+      entity: "flashcards-deck",
+      recordId: deck.id,
+      payload: JSON.stringify(deck),
+      updatedAt: stamp,
+    });
+  }
+
+  // Deleted decks travel as tombstones, exactly once.
+  for (const id of flash.tombstones) {
+    const key = `tomb:flashcards-deck:${id}`;
+    if (sync.sentKeys[key]) continue;
+    push({
+      entity: "flashcards-deck",
+      recordId: id,
+      payload: "{}",
+      updatedAt: now,
+      deleted: true,
     });
     sentKeys.push(key);
   }
@@ -311,7 +398,7 @@ async function collectChanges(): Promise<{
     }
   }
 
-  return { changes, sentKeys, stamps };
+  return { changes, sentKeys, stamps, pushedWhole };
 }
 
 /* ------------------------------------------------------------------ */
@@ -579,11 +666,214 @@ async function applyRecord(rec: PullRecord): Promise<void> {
 
       case "music": {
         const d = JSON.parse(rec.payload) as Record<string, unknown>;
-        useMusic.setState({
-          type: d.type === "playlist" || d.type === "video" ? d.type : null,
-          id: typeof d.id === "string" ? d.id : null,
-          volume: typeof d.volume === "number" ? d.volume : 80,
-          shuffle: d.shuffle === true,
+        useMusic.setState((s) => {
+          const removedKeys = new Set(
+            unionArrays(s.removedFavoriteKeys ?? [], d.removedFavoriteKeys)
+          );
+          const favorites = [...s.favorites];
+          for (const raw of Array.isArray(d.favorites) ? d.favorites : []) {
+            const f = raw as Favorite;
+            if (
+              !f ||
+              typeof f.id !== "string" ||
+              (f.type !== "playlist" && f.type !== "video")
+            ) {
+              continue;
+            }
+            if (removedKeys.has(`${f.type}:${f.id}`)) continue;
+            if (!favorites.some((x) => x.type === f.type && x.id === f.id)) {
+              favorites.unshift(f);
+            }
+          }
+          return {
+            // Player state is newest wins; favorites are union merged and
+            // filtered by every removal this bucket knows about.
+            favorites: favorites.filter(
+              (f) => !removedKeys.has(`${f.type}:${f.id}`)
+            ),
+            removedFavoriteKeys: [...removedKeys].slice(-400),
+            type: d.type === "playlist" || d.type === "video" ? d.type : null,
+            id: typeof d.id === "string" ? d.id : null,
+            volume: typeof d.volume === "number" ? d.volume : s.volume,
+            shuffle: d.shuffle === true,
+          };
+        });
+        useSyncStore.getState().setStamp(stampKey, rec.updatedAt);
+        return;
+      }
+
+      case "habits": {
+        const d = JSON.parse(rec.payload) as {
+          habits?: Habit[];
+          checks?: Record<string, string[]>;
+          xpAwarded?: string[];
+        };
+        useHabits.setState((s) => {
+          // Habits union by id. Once archived, a habit stays archived.
+          const byId = new Map(s.habits.map((h) => [h.id, h]));
+          for (const raw of Array.isArray(d.habits) ? d.habits : []) {
+            if (
+              !raw ||
+              typeof raw.id !== "string" ||
+              typeof raw.name !== "string" ||
+              typeof raw.createdAt !== "string"
+            ) {
+              continue;
+            }
+            const local = byId.get(raw.id);
+            if (!local) {
+              byId.set(raw.id, {
+                id: raw.id,
+                name: raw.name,
+                createdAt: raw.createdAt,
+                archivedAt: raw.archivedAt ?? null,
+              });
+            } else {
+              byId.set(raw.id, {
+                ...local,
+                name: local.archivedAt ? local.name : raw.name,
+                archivedAt: local.archivedAt ?? raw.archivedAt ?? null,
+              });
+            }
+          }
+          // Checked days only grow: a check on any device counts everywhere.
+          const checks: Record<string, string[]> = { ...s.checks };
+          for (const [habitId, days] of Object.entries(d.checks ?? {})) {
+            if (!Array.isArray(days)) continue;
+            const clean = days.filter((k) => typeof k === "string");
+            checks[habitId] = [
+              ...new Set([...(checks[habitId] ?? []), ...clean]),
+            ].sort();
+          }
+          return {
+            habits: [...byId.values()],
+            checks,
+            xpAwarded: unionArrays(s.xpAwarded, d.xpAwarded),
+          };
+        });
+        useSyncStore.getState().setStamp(stampKey, rec.updatedAt);
+        return;
+      }
+
+      case "flashcards-meta": {
+        const d = JSON.parse(rec.payload) as {
+          xpAwarded?: string[];
+          tombstones?: string[];
+        };
+        useFlashcards.setState((s) => ({
+          xpAwarded: unionArrays(s.xpAwarded, d.xpAwarded),
+          tombstones: unionArrays(s.tombstones, d.tombstones),
+        }));
+        useSyncStore.getState().setStamp(stampKey, rec.updatedAt);
+        return;
+      }
+
+      case "flashcards-deck": {
+        if (rec.deleted) {
+          useFlashcards.setState((s) => ({
+            decks: s.decks.filter((deck) => deck.id !== rec.recordId),
+            tombstones: [...new Set([...s.tombstones, rec.recordId])].slice(
+              -400
+            ),
+          }));
+          useSyncStore
+            .getState()
+            .markSent([`tomb:flashcards-deck:${rec.recordId}`]);
+          return;
+        }
+        const deck = JSON.parse(rec.payload) as Partial<Deck> | null;
+        if (!deck || typeof deck.id !== "string" || !Array.isArray(deck.cards)) {
+          return;
+        }
+        useFlashcards.setState((s) => {
+          if (s.tombstones.includes(rec.recordId)) return {}; // deleted elsewhere
+          const current = s.decks.find((d) => d.id === rec.recordId);
+          const incomingStamp = deck.updatedAt ?? deck.createdAt ?? EPOCH;
+          if (
+            current &&
+            !isNewer(incomingStamp, current.updatedAt ?? current.createdAt ?? EPOCH)
+          ) {
+            return {};
+          }
+          return {
+            decks: [
+              deck as Deck,
+              ...s.decks.filter((d) => d.id !== rec.recordId),
+            ],
+          };
+        });
+        return;
+      }
+
+      case "library-marks": {
+        const d = JSON.parse(rec.payload) as {
+          marks?: Record<
+            string,
+            { bookmarks?: Bookmark[]; highlights?: Highlight[] }
+          >;
+          removedMarkIds?: string[];
+          clearedBookIds?: string[];
+          clearedBookAt?: Record<string, string>;
+        };
+        useLibrary.setState((s) => {
+          const removedIds = new Set(
+            unionArrays(s.removedMarkIds, d.removedMarkIds)
+          );
+          const clearedIds = unionArrays(s.clearedBookIds, d.clearedBookIds);
+          const cleared = new Set(clearedIds);
+          const remoteMarks = d.marks ?? {};
+          const bookmarks: Record<string, Bookmark[]> = {};
+          const highlights: Record<string, Highlight[]> = {};
+          const bookIds = new Set([
+            ...Object.keys(s.bookmarks),
+            ...Object.keys(s.highlights),
+            ...Object.keys(remoteMarks),
+          ]);
+          for (const bookId of bookIds) {
+            if (cleared.has(bookId)) continue;
+            const localMarks = s.bookmarks[bookId] ?? [];
+            const localHighs = s.highlights[bookId] ?? [];
+            const remoteBook = remoteMarks[bookId];
+            const remoteList = Array.isArray(remoteBook?.bookmarks)
+              ? remoteBook.bookmarks
+              : [];
+            const remoteHighList = Array.isArray(remoteBook?.highlights)
+              ? remoteBook.highlights
+              : [];
+            const mergedMarks = [
+              ...new Map(
+                [...localMarks, ...remoteList]
+                  .filter(
+                    (m) =>
+                      m &&
+                      typeof m.id === "string" &&
+                      !removedIds.has(m.id)
+                  )
+                  .map((m) => [m.id, m])
+              ).values(),
+            ].sort((a, b) => a.page - b.page);
+            const mergedHighs = [
+              ...new Map(
+                [...localHighs, ...remoteHighList]
+                  .filter(
+                    (h) =>
+                      h &&
+                      typeof h.id === "string" &&
+                      !removedIds.has(h.id)
+                  )
+                  .map((h) => [h.id, h])
+              ).values(),
+            ];
+            if (mergedMarks.length) bookmarks[bookId] = mergedMarks;
+            if (mergedHighs.length) highlights[bookId] = mergedHighs;
+          }
+          return {
+            bookmarks,
+            highlights,
+            removedMarkIds: [...removedIds].slice(-400),
+            clearedBookIds: clearedIds.slice(-200),
+            clearedBookAt: { ...s.clearedBookAt, ...(d.clearedBookAt ?? {}) },
+          };
         });
         useSyncStore.getState().setStamp(stampKey, rec.updatedAt);
         return;
@@ -614,7 +904,7 @@ export async function syncNow(
 
   useSyncStore.getState().setSyncing(true);
   try {
-    const { changes, sentKeys, stamps } = await collectChanges();
+    const { changes, sentKeys, stamps, pushedWhole } = await collectChanges();
     const deviceId =
       useSyncStore.getState().deviceId || useSyncStore.getState().ensureDeviceId();
 
@@ -660,6 +950,10 @@ export async function syncNow(
     }
 
     if (sentKeys.length) useSyncStore.getState().markSent(sentKeys);
+    // Only clear the dirty flags AFTER the server accepted the round.
+    if (pushedWhole.length) {
+      useSyncStore.getState().markWholePushed(pushedWhole);
+    }
     for (const [key, iso] of stamps) {
       useSyncStore.getState().setStamp(key, iso);
     }
@@ -667,10 +961,9 @@ export async function syncNow(
     useSyncStore.getState().setError(null);
     return { ok: true };
   } catch (err) {
-    const message =
-      err instanceof Error
-        ? "Sync failed. Changes stay queued on this device."
-        : "Sync failed. Changes stay queued on this device.";
+    // Surface the real cause in the console; the toast stays friendly.
+    console.warn("FORGE sync failed:", err);
+    const message = "Sync failed. Changes stay queued on this device.";
     useSyncStore.getState().setError(message);
     return { ok: false, error: message };
   } finally {
@@ -699,12 +992,14 @@ export async function createSyncBucket(): Promise<{ ok: boolean; error?: string 
       return { ok: false, error: data.error ?? "Could not create a sync code." };
     }
     useSyncStore.getState().adoptKey(data.syncKey, true);
-    // Stamp every whole entity so existing local data uploads to the new bucket.
+    // Stamp every whole entity so existing local data uploads to the new
+    // bucket, and mark them pending so the upload never depends on clocks.
     const now = new Date().toISOString();
     const stamps: Record<string, string> = {};
     for (const entity of WHOLE_ENTITIES) stamps[`${entity}:state`] = now;
     useSyncStore.setState((s) => ({
       entityStamps: { ...s.entityStamps, ...stamps },
+      pendingWhole: [...new Set([...s.pendingWhole, ...WHOLE_ENTITIES])],
     }));
     void syncNow("created");
     return { ok: true };
@@ -791,6 +1086,9 @@ function hasPendingQuick(): boolean {
   if (!sync.syncKey) return false;
   const cursor = sync.lastSyncAt ?? "";
 
+  // Dirty whole entities always count, whatever the clocks say.
+  if (sync.pendingWhole.length > 0) return true;
+
   for (const entity of WHOLE_ENTITIES) {
     const stamp = sync.entityStamps[`${entity}:state`];
     if (stamp && stamp > cursor) return true;
@@ -815,6 +1113,13 @@ function hasPendingQuick(): boolean {
     return true;
   for (const lesson of learn.lessons) {
     if ((lesson.updatedAt ?? lesson.savedAt) > cursor) return true;
+  }
+
+  const flash = useFlashcards.getState();
+  if (flash.tombstones.some((id) => !sync.sentKeys[`tomb:flashcards-deck:${id}`]))
+    return true;
+  for (const deck of flash.decks) {
+    if ((deck.updatedAt ?? deck.createdAt) > cursor) return true;
   }
 
   return false;
@@ -858,8 +1163,11 @@ export function initSyncEngine(): () => void {
   watch(useProfile, "profile");
   watch(useFitness, "fitness-meta");
   watch(useLibrary, "library-meta");
+  watch(useLibrary, "library-marks");
   watch(useLearnStore, "learn-meta");
   watch(useMusic, "music");
+  watch(useHabits, "habits");
+  watch(useFlashcards, "flashcards-meta");
 
   const onOnline = () => void syncNow("online");
   const onVisible = () => {

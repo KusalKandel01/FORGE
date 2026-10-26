@@ -19,6 +19,8 @@ interface MusicState {
   volume: number;
   shuffle: boolean;
   favorites: Favorite[];
+  /** "type:id" pairs removed here, so cloud sync drops them everywhere. */
+  removedFavoriteKeys: string[];
   setSource: (type: SourceType, id: string) => void;
   clearSource: () => void;
   setVolume: (v: number) => void;
@@ -37,6 +39,7 @@ export const useMusic = create<MusicState>()(
       volume: 80,
       shuffle: false,
       favorites: [],
+      removedFavoriteKeys: [],
       setSource: (type, id) => set({ type, id }),
       clearSource: () => set({ type: null, id: null }),
       setVolume: (volume) => set({ volume }),
@@ -60,15 +63,25 @@ export const useMusic = create<MusicState>()(
           favorites: s.favorites.filter(
             (f) => !(f.type === type && f.id === id)
           ),
+          removedFavoriteKeys: [
+            ...new Set([...(s.removedFavoriteKeys ?? []), `${type}:${id}`]),
+          ].slice(-400),
         })),
       resetMusic: () =>
-        set({
+        set((s) => ({
           type: null,
           id: null,
           volume: 80,
           shuffle: false,
           favorites: [],
-        }),
+          // Remember what was removed so the cloud copy does not come back.
+          removedFavoriteKeys: [
+            ...new Set([
+              ...(s.removedFavoriteKeys ?? []),
+              ...s.favorites.map((f) => `${f.type}:${f.id}`),
+            ]),
+          ].slice(-400),
+        })),
     }),
     { name: "forge-music" }
   )

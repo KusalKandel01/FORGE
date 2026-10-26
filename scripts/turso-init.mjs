@@ -60,6 +60,7 @@ const statements = [
     "recordId" TEXT NOT NULL,
     "payload" TEXT NOT NULL,
     "updatedAt" DATETIME NOT NULL,
+    "clientUpdatedAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "deleted" BOOLEAN NOT NULL DEFAULT false,
     CONSTRAINT "SyncRecord_userId_fkey" FOREIGN KEY ("userId") REFERENCES "SyncUser" ("id") ON DELETE CASCADE ON UPDATE CASCADE
   )`,
@@ -75,6 +76,23 @@ const statements = [
 
 for (const sql of statements) {
   await db.execute(sql);
+}
+
+// Migration for databases created before clientUpdatedAt existed: add the
+// column to an existing SyncRecord table. SQLite only allows constant
+// defaults in ALTER TABLE, so migrated rows get the epoch: any real write
+// from any device beats them. Fails harmlessly when the column is already
+// there (CREATE TABLE above already covers fresh databases).
+try {
+  await db.execute(
+    `ALTER TABLE "SyncRecord" ADD COLUMN "clientUpdatedAt" DATETIME NOT NULL DEFAULT '1970-01-01 00:00:00'`
+  );
+  console.log("Migrated SyncRecord: added clientUpdatedAt column.");
+} catch (err) {
+  const message = String(err?.message ?? err);
+  if (!/already exists|duplicate column/i.test(message)) {
+    throw err;
+  }
 }
 
 console.log("Done. Sync tables created in:", url);

@@ -4,7 +4,7 @@
  * Convention for the whole app:
  *  - every zustand persisted store name starts with "forge-"
  *    (forge-profile, forge-fitness, forge-library, forge-learn, forge-music,
- *    forge-skills)
+ *    forge-skills, forge-flashcards, forge-habits, forge-sync)
  *  - every IndexedDB database starts with "forge-"
  *    (forge-books, forge-learn, forge-skills, forge-images)
  */

@@ -598,7 +598,8 @@ export default function MusicPlayer() {
                 <Star className="h-4 w-4 text-volt" aria-hidden /> Favorites
               </CardTitle>
               <CardDescription>
-                Saved mixes, playlists and videos. Stored on this device.
+                Saved mixes, playlists and videos. Synced with your cloud
+                backup.
               </CardDescription>
             </CardHeader>
             <CardContent>

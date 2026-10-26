@@ -7,11 +7,12 @@ import { db } from "@/lib/db";
  *
  * One round trip does both halves of the sync:
  *  1. PUSH: the client sends everything that changed locally since its last
- *     sync. The server keeps the newest version of every record
- *     (last write wins, comparing client timestamps).
- *  2. PULL: the response carries every record in the bucket updated after
- *     the client's "since" cursor, so the client can merge what other
- *     devices changed.
+ *     sync. The server keeps the newest version of every record, comparing
+ *     client clocks (clientUpdatedAt) so last write wins across devices.
+ *  2. PULL: the response carries every record in the bucket received after
+ *     the client's "since" cursor. Records are stamped with SERVER receive
+ *     time, so a device with a slow or fast clock can never hide records
+ *     from another device's pull.
  *
  * There are no accounts: the syncKey is the only credential. It is a random
  * code generated on the user's first device; entering it on another device
@@ -106,7 +107,7 @@ export async function POST(request: NextRequest) {
     // Device bookkeeping must never block a sync.
   }
 
-  // PUSH: apply every change that is newer than what we already store.
+  // PUSH: apply every change whose client clock beats what we already store.
   for (const change of changes) {
     const incomingAt = new Date(change.updatedAt);
     if (Number.isNaN(incomingAt.getTime())) continue;
@@ -119,12 +120,17 @@ export async function POST(request: NextRequest) {
             recordId: change.recordId,
           },
         },
-        select: { updatedAt: true },
+        select: { clientUpdatedAt: true },
       });
-      if (existing && existing.updatedAt.getTime() >= incomingAt.getTime()) {
+      if (
+        existing &&
+        existing.clientUpdatedAt.getTime() >= incomingAt.getTime()
+      ) {
         // Server already has an equal or newer version: keep it.
         continue;
       }
+      // updatedAt stays on the server clock so pull cursors are skew-free.
+      const receivedAt = new Date();
       await db.syncRecord.upsert({
         where: {
           userId_entity_recordId: {
@@ -138,12 +144,14 @@ export async function POST(request: NextRequest) {
           entity: change.entity,
           recordId: change.recordId,
           payload: change.payload,
-          updatedAt: incomingAt,
+          updatedAt: receivedAt,
+          clientUpdatedAt: incomingAt,
           deleted: change.deleted ?? false,
         },
         update: {
           payload: change.payload,
-          updatedAt: incomingAt,
+          updatedAt: receivedAt,
+          clientUpdatedAt: incomingAt,
           deleted: change.deleted ?? false,
         },
       });
