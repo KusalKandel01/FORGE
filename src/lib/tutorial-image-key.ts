@@ -1,18 +1,17 @@
 /**
- * Stable cache key for step by step tutorial illustrations.
+ * Stable cache key for step by step tutorial photos.
  *
- * Shared by the API route (server cache in Prisma) and the client
- * (IndexedDB cache in the "forge-images" database) so both sides agree
- * on one key per (kind, id, step, step text). The text hash makes the
- * key change if the step copy ever changes, so stale images are never
- * shown for rewritten steps.
+ * Used by the client (IndexedDB cache in the "forge-images" database) so
+ * one real web photo is reused for a given (kind, id, step, step text).
+ * The text hash makes the key change if the step copy ever changes, so
+ * stale photos are never shown for rewritten steps.
  */
 
 export type TutorialImageKind = "exercise" | "skill";
 
 /**
- * Bump when the illustration prompt changes in a way that must invalidate
- * every cached image (server DB rows and device IndexedDB entries).
+ * Bump when the photo lookup changes in a way that must invalidate
+ * every cached photo in device IndexedDB entries.
  */
 const KEY_VERSION = "v3";
 

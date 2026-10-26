@@ -58,8 +58,12 @@ async function readCache<T>(key: string): Promise<T | null> {
       memory.set(key, { expires: Date.now() + MEMORY_TTL_MS, payload });
       return payload;
     }
-  } catch {
-    // DB unavailable: memory cache still works.
+  } catch (error) {
+    // DB unavailable: memory cache still works, but surface why.
+    console.warn(
+      "[real-media] MediaCache read failed:",
+      error instanceof Error ? error.message : error
+    );
   }
   return null;
 }
@@ -72,8 +76,13 @@ async function writeCache(key: string, payload: unknown): Promise<void> {
       create: { key, payload: JSON.stringify(payload) },
       update: { payload: JSON.stringify(payload) },
     });
-  } catch {
-    // Memory cache is enough to keep the request serving.
+  } catch (error) {
+    // Memory cache is enough to keep the request serving, but surface why
+    // the shared cache write failed.
+    console.warn(
+      "[real-media] MediaCache write failed:",
+      error instanceof Error ? error.message : error
+    );
   }
 }
 

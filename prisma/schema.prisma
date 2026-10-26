@@ -44,18 +44,6 @@ model MediaCache {
 }
 
 /**
- * AI generated step by step tutorial illustration, cached by a stable key
- * (kind + exercise/skill id + step index + text hash). One image per step
- * keeps the same picture on every device and every visit instead of
- * regenerating and paying for a new one each time.
- */
-model TutorialImage {
-  key       String   @id
-  dataUrl   String
-  createdAt DateTime @default(now())
-}
-
-/**
  * FORGE cloud sync (no accounts, no emails).
  *
  * A SyncUser is an anonymous bucket identified by a random sync code

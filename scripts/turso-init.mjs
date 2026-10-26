@@ -63,6 +63,11 @@ const statements = [
     "deleted" BOOLEAN NOT NULL DEFAULT false,
     CONSTRAINT "SyncRecord_userId_fkey" FOREIGN KEY ("userId") REFERENCES "SyncUser" ("id") ON DELETE CASCADE ON UPDATE CASCADE
   )`,
+  `CREATE TABLE IF NOT EXISTS "MediaCache" (
+    "key" TEXT NOT NULL PRIMARY KEY,
+    "payload" TEXT NOT NULL,
+    "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+  )`,
   `CREATE UNIQUE INDEX IF NOT EXISTS "SyncRecord_userId_entity_recordId_key" ON "SyncRecord"("userId", "entity", "recordId")`,
   `CREATE INDEX IF NOT EXISTS "SyncRecord_userId_updatedAt_idx" ON "SyncRecord"("userId", "updatedAt")`,
   `CREATE INDEX IF NOT EXISTS "Device_userId_idx" ON "Device"("userId")`,

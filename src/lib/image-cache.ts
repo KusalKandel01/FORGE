@@ -1,11 +1,11 @@
 /**
- * Promise-based IndexedDB cache for step by step tutorial illustrations.
+ * Promise-based IndexedDB cache for step by step tutorial photos.
  *
  * Database: "forge-images" (deleted by the global reset in
  * src/lib/reset-all.ts). Object store: "img" with keyPath "key".
  *
- * Generated illustrations are cached here so they load instantly, work
- * offline and are never paid for twice on the same device. Entries are
+ * Real web photos are cached here so they load instantly, work
+ * offline and are never searched for twice on the same device. Entries are
  * evicted FIFO once the store grows past MAX_ENTRIES. Every function is
  * SSR-guarded and fails silently: caching must never break the UI.
  */

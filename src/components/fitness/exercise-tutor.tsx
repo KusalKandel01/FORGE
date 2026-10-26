@@ -44,7 +44,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { useToast } from "@/hooks/use-toast";
 import { StepImages } from "@/components/shared/step-images";
-import { TopicMedia } from "@/components/shared/topic-media";
+import { TopicImages, TopicMedia } from "@/components/shared/topic-media";
 import { newWorkout, todayKey, useFitness } from "./store";
 import {
   blockFromExercise,
@@ -594,6 +594,14 @@ function TutorPlayer({ title, blocks, onClose }: PlayerProps) {
                     {displayEx.equipment}
                   </p>
                 </div>
+                {/* Real photos of the movement from the web, refetched for
+                    every exercise as the workout advances. */}
+                <TopicImages
+                  key={displayEx.name}
+                  query={`${displayEx.name} exercise`}
+                  count={3}
+                  className="mt-3"
+                />
                 <ol className="nice-scrollbar mt-3 max-h-56 space-y-3 overflow-y-auto pr-1">
                   {displayEx.steps.map((s, i) => (
                     <li key={i} className="flex gap-3">

@@ -11,7 +11,7 @@ installable mobile app. Everything below uses free tiers only.
 | Free book search and reader (Gutendex, Open Library, Project Gutenberg) | Nothing. Public APIs. |
 | Music player (YouTube playlists) | Nothing. |
 | Steps, workouts, exercise tutor, progress, interval timer | Nothing. All data lives on the device and works offline. |
-| Book writer, AI coach plans, Learn tutor lessons | `AI_API_KEY` (free tier of Groq or Google AI Studio). |
+| Book writer, AI coach plans, Learn tutor lessons | `AI_API_KEY` (free key from Z.ai, see Step 3). |
 | Cloud sync (FORGE sync codes across devices) | A hosted database: Turso (free, recommended). |
 
 ## Step 0: get the code onto GitHub
@@ -51,6 +51,15 @@ TURSO_AUTH_TOKEN=YOUR_TOKEN \
 bun scripts/turso-init.mjs
 ```
 
+Already been using the app locally and want to keep your data? Copy it up
+once:
+
+```bash
+TURSO_DATABASE_URL=libsql://forge-YOURORG.turso.io \
+TURSO_AUTH_TOKEN=YOUR_TOKEN \
+bun scripts/turso-copy.ts
+```
+
 ## Step 2: pick a host
 
 | Host | Free tier | Verdict for FORGE |
@@ -71,15 +80,19 @@ bun scripts/turso-init.mjs
 | --- | --- |
 | `TURSO_DATABASE_URL` | your libsql URL from step 1 |
 | `TURSO_AUTH_TOKEN` | your Turso token |
-| `AI_API_KEY` | your provider key (see below) |
-| `AI_BASE_URL` | provider URL, e.g. `https://api.groq.com/openai/v1` |
-| `AI_MODEL` | e.g. `llama-3.3-70b-versatile` |
+| `AI_API_KEY` | your Z.ai key (see below) |
+| `AI_BASE_URL` | `https://api.z.ai/api/paas/v4` |
+| `AI_MODEL` | `glm-4.5-flash` |
 
 4. Click **Deploy**. Two minutes later your site is live at
    `https://forge-yourname.vercel.app` with HTTPS.
 
-Free AI keys: create one at console.groq.com (fast, generous free tier) or
-aistudio.google.com (Google free tier). Any OpenAI-compatible provider works.
+Free AI: the recommended provider is **Z.ai** - create a free API key on
+the Z.ai Open Platform, paste it as `AI_API_KEY`, and set `AI_BASE_URL` to
+`https://api.z.ai/api/paas/v4` with `AI_MODEL=glm-4.5-flash`. That is the
+same model family that powers FORGE in this workspace. Any
+OpenAI-compatible provider also works (Groq, Google AI Studio, OpenAI,
+OpenRouter).
 
 Deploying on Netlify or Cloudflare Pages is the same idea: import the repo,
 add the same environment variables, deploy.
@@ -122,4 +135,16 @@ bun run dev        # http://localhost:3000
 bun run db:push    # apply prisma/schema.prisma to the local SQLite file
 ```
 
-`.env` values for local development are documented in `.env.example`.
+Put `TURSO_DATABASE_URL` and `TURSO_AUTH_TOKEN` in `.env` and local dev
+automatically talks to your Turso database instead of the local file -
+same code path as production. `.env` values are documented in
+`.env.example`.
+
+## Database modes (how it works)
+
+- No `TURSO_DATABASE_URL`: Prisma uses the local SQLite file at
+  `DATABASE_URL`. Good for offline development.
+- `TURSO_DATABASE_URL` set: Prisma talks to Turso through the libSQL
+  driver adapter (`@prisma/adapter-libsql`). Sync buckets, devices,
+  synced records and the shared real-photo cache all live in the cloud,
+  shared by every device and every deployment.

@@ -6,7 +6,7 @@
  * Picture pipeline, per step:
  * 1. REAL PHOTO from the open web (server-side image search, cached in the
  *    MediaCache table) - fast, real, exactly what the user asked for.
- * 2. Branded fallback tile so a failed picture never blocks reading.
+ * 2. An honest empty state so a failed picture never blocks reading.
  *
  * No AI drawings anywhere: if the web has no photo for a step, the step
  * keeps its text and offers a retry - it never shows a fake picture.
@@ -54,32 +54,6 @@ function parseRealCacheValue(v: string):
   const [, source, url] = v.split("|");
   if (!url || !url.startsWith("http")) return null;
   return { url, source: source || "web" };
-}
-
-/**
- * Branded fallback tile shown when no real photo can be fetched
- * (rate limits, offline). Keeps the text + picture layout stable instead
- * of collapsing into a bare retry button.
- */
-function fallbackTile(stepNumber: number, title: string): string {
-  const esc = (s: string) =>
-    s
-      .replace(/&/g, "&amp;")
-      .replace(/</g, "&lt;")
-      .replace(/>/g, "&gt;")
-      .replace(/"/g, "&quot;");
-  const svg =
-    `<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512">` +
-    `<rect width="512" height="512" fill="#09090b"/>` +
-    `<rect x="14" y="14" width="484" height="484" fill="none" stroke="#a3e635" stroke-width="3"/>` +
-    `<text x="256" y="210" text-anchor="middle" font-family="Arial, sans-serif" font-size="130" font-weight="bold" fill="#a3e635">${stepNumber}</text>` +
-    `<text x="256" y="290" text-anchor="middle" font-family="Arial, sans-serif" font-size="22" letter-spacing="6" fill="#ffffff">NO PHOTO</text>` +
-    `<text x="256" y="326" text-anchor="middle" font-family="Arial, sans-serif" font-size="22" letter-spacing="6" fill="#ffffff">FOUND YET</text>` +
-    `<text x="256" y="400" text-anchor="middle" font-family="Arial, sans-serif" font-size="16" fill="#71717a">${esc(
-      title.slice(0, 34)
-    )}</text>` +
-    `</svg>`;
-  return `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`;
 }
 
 export function StepImages({
@@ -323,12 +297,17 @@ export function StepImages({
 
                 {status?.state === "error" ? (
                   <div className="mt-2 w-full max-w-[240px]">
-                    <img
-                      src={fallbackTile(i + 1, title)}
-                      alt={`No photo found for step ${i + 1} of ${title}`}
-                      className="w-full border border-border"
-                      loading="lazy"
-                    />
+                    <div className="flex aspect-square w-full flex-col items-center justify-center gap-1 border border-dashed border-border bg-secondary/20 px-3 text-center">
+                      <span
+                        className="font-display text-4xl leading-none text-volt/70"
+                        aria-hidden
+                      >
+                        {i + 1}
+                      </span>
+                      <span className="font-head text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
+                        No real photo found yet
+                      </span>
+                    </div>
                     <button
                       type="button"
                       onClick={() => void fetchStep(i, runIdRef.current)}

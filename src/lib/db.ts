@@ -20,18 +20,14 @@ function createPrismaClient(): PrismaClient {
 
   if (tursoUrl) {
     // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const { createClient } = require('@libsql/client') as typeof import('@libsql/client')
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
     const { PrismaLibSQL } = require('@prisma/adapter-libsql') as typeof import('@prisma/adapter-libsql')
-    const libsql = createClient({
-      url: tursoUrl,
-      authToken: authToken || undefined,
-    })
-    const adapter = new PrismaLibSQL(libsql)
-    return new PrismaClient({ adapter, log: ['query'] })
+    // Prisma 6.x API: PrismaLibSQL takes the libSQL config ({ url, authToken })
+    // and creates the underlying client itself.
+    const adapter = new PrismaLibSQL({ url: tursoUrl, authToken: authToken || undefined })
+    return new PrismaClient({ adapter })
   }
 
-  return new PrismaClient({ log: ['query'] })
+  return new PrismaClient()
 }
 
 const globalForPrisma = globalThis as unknown as {
