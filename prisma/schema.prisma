@@ -1,0 +1,105 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
+// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  name      String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Post {
+  id        String   @id @default(cuid())
+  title     String
+  content   String?
+  published Boolean  @default(false)
+  authorId  String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+/**
+ * Cached real-world media found on the open web (SDK image search and
+ * web search). One row per normalized query so every visitor gets the
+ * same real photos/videos instantly after the first lookup, instead of
+ * searching (and paying latency) again on every device.
+ */
+model MediaCache {
+  key       String   @id
+  payload   String
+  createdAt DateTime @default(now())
+}
+
+/**
+ * AI generated step by step tutorial illustration, cached by a stable key
+ * (kind + exercise/skill id + step index + text hash). One image per step
+ * keeps the same picture on every device and every visit instead of
+ * regenerating and paying for a new one each time.
+ */
+model TutorialImage {
+  key       String   @id
+  dataUrl   String
+  createdAt DateTime @default(now())
+}
+
+/**
+ * FORGE cloud sync (no accounts, no emails).
+ *
+ * A SyncUser is an anonymous bucket identified by a random sync code
+ * (e.g. FORGE-7K2M-QX9P). Any device that knows the code reads and
+ * writes the same bucket, which is what makes multi-device sync work
+ * without passwords.
+ */
+model SyncUser {
+  id        String       @id @default(cuid())
+  syncKey   String       @unique
+  createdAt DateTime     @default(now())
+  devices   Device[]
+  records   SyncRecord[]
+}
+
+/** A browser or installed PWA that has synced with this bucket. */
+model Device {
+  id       String   @id
+  userId   String
+  name     String?
+  lastSeen DateTime @default(now())
+  user     SyncUser @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+/**
+ * One synced piece of state.
+ *
+ * entity    - what kind of data it is ("profile", "fitness-day", "lesson", ...)
+ * recordId  - key inside that entity ("state", "2025-01-31", lesson id, ...)
+ * payload   - the data itself, JSON encoded
+ * updatedAt - client clock of the last change (last-write-wins)
+ * deleted   - tombstone for records removed on some device
+ */
+model SyncRecord {
+  id        String   @id @default(cuid())
+  userId    String
+  entity    String
+  recordId  String
+  payload   String
+  updatedAt DateTime
+  deleted   Boolean  @default(false)
+
+  user SyncUser @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, entity, recordId])
+  @@index([userId, updatedAt])
+}

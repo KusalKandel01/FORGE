@@ -1,0 +1,207 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+
+@custom-variant dark (&:is(.dark *));
+
+@theme {
+  --color-volt: #c8ff2e;
+  --color-ember: #ffb020;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --font-sans: var(--font-inter), Arial, sans-serif;
+  --font-mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  --font-display: var(--font-bebas), "Burbank Big Condensed", "Akira Expanded",
+    "Arial Narrow", sans-serif;
+  --font-head: var(--font-montserrat), "Gotham Black", "Cocogoose Classic",
+    "Mont", Arial, sans-serif;
+  --font-comic: "Komika Axis", "Planet Comic", "ObelixPro", "Blues Smiles",
+    "Comic Sans MS", cursive;
+  --font-expanded: "Akira Expanded", "Cocogoose Classic", var(--font-bebas),
+    "Arial Narrow", sans-serif;
+  --font-grot: "Neue Haas Grotesk Display Pro", var(--font-inter), Arial,
+    sans-serif;
+  --font-museo: "Museo Sans", "Mont", var(--font-montserrat), Arial, sans-serif;
+  --font-mont: "Mont", "Coolvettica", var(--font-montserrat), Arial, sans-serif;
+  --color-sidebar-ring: var(--sidebar-ring);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar: var(--sidebar);
+  --color-chart-5: var(--chart-5);
+  --color-chart-4: var(--chart-4);
+  --color-chart-3: var(--chart-3);
+  --color-chart-2: var(--chart-2);
+  --color-chart-1: var(--chart-1);
+  --color-ring: var(--ring);
+  --color-input: var(--input);
+  --color-border: var(--border);
+  --color-destructive: var(--destructive);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-accent: var(--accent);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-muted: var(--muted);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-secondary: var(--secondary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-primary: var(--primary);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-popover: var(--popover);
+  --color-card-foreground: var(--card-foreground);
+  --color-card: var(--card);
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+}
+
+/*
+  FORGE design system: dark, sharp, high contrast.
+  Dark theme values are the default for the whole site (no light mode).
+  Radius is 0 on purpose: sharp corners everywhere, no pill shapes.
+*/
+:root {
+  --radius: 0rem;
+  --background: #09090b;
+  --foreground: #fafafa;
+  --card: #101013;
+  --card-foreground: #fafafa;
+  --popover: #101013;
+  --popover-foreground: #fafafa;
+  --primary: #c8ff2e;
+  --primary-foreground: #09090b;
+  --secondary: #1c1c20;
+  --secondary-foreground: #fafafa;
+  --muted: #1a1a1e;
+  --muted-foreground: #a1a1aa;
+  --accent: #202024;
+  --accent-foreground: #fafafa;
+  --destructive: #ef4444;
+  --border: rgba(255, 255, 255, 0.12);
+  --input: rgba(255, 255, 255, 0.16);
+  --ring: #c8ff2e;
+  --chart-1: #c8ff2e;
+  --chart-2: #ffb020;
+  --chart-3: #fafafa;
+  --chart-4: #a1a1aa;
+  --chart-5: #ef4444;
+  --sidebar: #101013;
+  --sidebar-foreground: #fafafa;
+  --sidebar-primary: #c8ff2e;
+  --sidebar-primary-foreground: #09090b;
+  --sidebar-accent: #202024;
+  --sidebar-accent-foreground: #fafafa;
+  --sidebar-border: rgba(255, 255, 255, 0.12);
+  --sidebar-ring: #c8ff2e;
+}
+
+.dark {
+  --background: #09090b;
+  --foreground: #fafafa;
+  --card: #101013;
+  --card-foreground: #fafafa;
+  --popover: #101013;
+  --popover-foreground: #fafafa;
+  --primary: #c8ff2e;
+  --primary-foreground: #09090b;
+  --secondary: #1c1c20;
+  --secondary-foreground: #fafafa;
+  --muted: #1a1a1e;
+  --muted-foreground: #a1a1aa;
+  --accent: #202024;
+  --accent-foreground: #fafafa;
+  --destructive: #ef4444;
+  --border: rgba(255, 255, 255, 0.12);
+  --input: rgba(255, 255, 255, 0.16);
+  --ring: #c8ff2e;
+  --chart-1: #c8ff2e;
+  --chart-2: #ffb020;
+  --chart-3: #fafafa;
+  --chart-4: #a1a1aa;
+  --chart-5: #ef4444;
+  --sidebar: #101013;
+  --sidebar-foreground: #fafafa;
+  --sidebar-primary: #c8ff2e;
+  --sidebar-primary-foreground: #09090b;
+  --sidebar-accent: #202024;
+  --sidebar-accent-foreground: #fafafa;
+  --sidebar-border: rgba(255, 255, 255, 0.12);
+  --sidebar-ring: #c8ff2e;
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  body {
+    @apply bg-background text-foreground;
+  }
+  ::selection {
+    background: #c8ff2e;
+    color: #09090b;
+  }
+  html {
+    scrollbar-color: rgba(255, 255, 255, 0.2) transparent;
+  }
+}
+
+@layer utilities {
+  /* Hide scrollbars but keep scrolling (tab bars) */
+  .no-scrollbar {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+  .no-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
+
+  /* Styled slim scrollbar for long lists */
+  .nice-scrollbar {
+    scrollbar-width: thin;
+    scrollbar-color: rgba(255, 255, 255, 0.18) transparent;
+  }
+  .nice-scrollbar::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+  .nice-scrollbar::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  .nice-scrollbar::-webkit-scrollbar-thumb {
+    background: rgba(255, 255, 255, 0.18);
+    border-radius: 0;
+  }
+  .nice-scrollbar::-webkit-scrollbar-thumb:hover {
+    background: #c8ff2e;
+  }
+
+  /* Hard offset shadows (brutalist accent, no blur, no gradients) */
+  .hard-shadow-volt {
+    box-shadow: 6px 6px 0 0 #c8ff2e;
+  }
+  .hard-shadow-sm-volt {
+    box-shadow: 4px 4px 0 0 #c8ff2e;
+  }
+  .hard-shadow-white {
+    box-shadow: 6px 6px 0 0 rgba(255, 255, 255, 0.85);
+  }
+  .hard-shadow-sm-white {
+    box-shadow: 4px 4px 0 0 rgba(255, 255, 255, 0.85);
+  }
+
+  /* Giant outlined background typography */
+  .text-stroke {
+    -webkit-text-stroke: 1.5px rgba(255, 255, 255, 0.16);
+    color: transparent;
+  }
+
+  /* Highlighter swipe under key words */
+  .volt-underline {
+    box-shadow: inset 0 -0.35em 0 0 rgba(200, 255, 46, 0.35);
+  }
+}
